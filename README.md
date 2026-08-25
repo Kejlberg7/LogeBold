@@ -62,6 +62,9 @@ end en lokal database, medmindre du skriver `--force`.
    *pooled* connection string.
 2. **Hosting:** importér repoet på [vercel.com](https://vercel.com), sæt de fire
    miljøvariabler, og deploy. `vercel.json` starter det natlige synk kl. 03.30.
+   Udrulning fra kommandolinjen sker med `npm run deploy` — den ruller ud fra en
+   kopi uden git-metadata, fordi Vercel ellers afviser udrulningen, når
+   commit-forfatterens mail ikke er medlem af Vercel-teamet.
 3. **Tabeller:** kør `npm run db:push` med produktionens `DATABASE_URL`.
 4. **Domæne:** tilføj `loge.kejlberg.it` i Vercel, og opret hos one.com en
    CNAME-record med hostname `loge`, der peger på den værdi Vercel viser.
@@ -79,3 +82,4 @@ end en lokal database, medmindre du skriver `--force`.
 | `npm run db:studio` | Drizzle Studio |
 | `npm run seed` | Testdata (kun lokalt) |
 | `npm run recalc` | Genberegner kampopkrævninger |
+| `npm run deploy` | Ruller den nyeste commit ud til produktion |
