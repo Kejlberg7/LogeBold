@@ -32,10 +32,13 @@ async function upsertTeams(apiTeams: ApiTeam[]): Promise<Map<number, number>> {
   // Hold kan være oprettet i forvejen med et gættet API-id (fx ved manuel opsætning).
   // Vi genkender dem på navnet og retter id'et, så vi ikke får dubletter.
   const existing = await db
-    .select({ id: teams.id, apiId: teams.apiId, name: teams.name })
+    .select({ id: teams.id, apiId: teams.apiId, name: teams.name, tla: teams.tla })
     .from(teams);
   const idByApiId = new Map(existing.map((t) => [t.apiId, t.id]));
   const idByName = new Map(existing.map((t) => [t.name.toLowerCase(), t.id]));
+  const idByTla = new Map(
+    existing.filter((t) => t.tla).map((t) => [t.tla!.toUpperCase(), t.id]),
+  );
 
   for (const t of apiTeams) {
     const values = {
@@ -46,7 +49,10 @@ async function upsertTeams(apiTeams: ApiTeam[]): Promise<Map<number, number>> {
       crestUrl: t.crest,
     };
 
-    const existingId = idByApiId.get(t.id) ?? idByName.get(t.name.toLowerCase());
+    const existingId =
+      idByApiId.get(t.id) ??
+      idByName.get(t.name.toLowerCase()) ??
+      (t.tla ? idByTla.get(t.tla.toUpperCase()) : undefined);
 
     if (existingId) {
       await db.update(teams).set(values).where(eq(teams.id, existingId));

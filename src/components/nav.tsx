@@ -2,15 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { logoutAction } from "@/app/login/actions";
 
 const ITEMS = [
   { href: "/", label: "Oversigt" },
-  { href: "/mig", label: "Min side" },
   { href: "/kampe", label: "Kampe" },
   { href: "/tabel", label: "Stilling" },
 ];
 
-export function Nav({ isAdmin, memberName }: { isAdmin: boolean; memberName: string }) {
+export function Nav({ isAdmin, memberName }: { isAdmin: boolean; memberName?: string }) {
   const pathname = usePathname();
   const items = isAdmin ? [...ITEMS, { href: "/admin", label: "Admin" }] : ITEMS;
 
@@ -39,7 +39,20 @@ export function Nav({ isAdmin, memberName }: { isAdmin: boolean; memberName: str
               </Link>
             ))}
           </nav>
-          <span className="text-[13px] text-ink-soft sm:text-[14px]">{memberName}</span>
+          {memberName ? (
+            <span className="flex items-baseline gap-2 text-[13px] text-ink-soft sm:text-[14px]">
+              {memberName}
+              <form action={logoutAction}>
+                <button type="submit" className="underline">
+                  Log ud
+                </button>
+              </form>
+            </span>
+          ) : (
+            <Link href="/login" className="text-[13px] text-ink-soft underline sm:text-[14px]">
+              Log ind
+            </Link>
+          )}
         </div>
       </header>
 

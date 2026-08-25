@@ -23,6 +23,14 @@ Alt er én kassebog. Hver linje har en dato, et medlem, et beløb og en grund:
 - En **lukket måned** kan ikke ændres. Hverken nye satser eller en genberegning
   rører den. Åbn den igen, hvis der skal rettes.
 
+## Hvem kan se hvad
+
+Alle sider undtagen `/admin` er åbne. Man behøver ikke logge ind for at se
+kassen, kampene, stillingen eller den enkeltes regnskab — link til siden er nok.
+Kun admin logger ind, og kun admin kan registrere betalinger, give bøder og
+ændre satser. Loginkoden er derfor den eneste rigtige hemmelighed: den, der har
+en admin-kode, kan flytte penge i regnskabet.
+
 ## Kør lokalt
 
 Kræver Node 20 og en lokal Postgres.
@@ -58,8 +66,8 @@ end en lokal database, medmindre du skriver `--force`.
 4. **Domæne:** tilføj `loge.kejlberg.it` i Vercel, og opret hos one.com en
    CNAME-record med hostname `loge`, der peger på den værdi Vercel viser.
 5. **Første login:** på en tom database beder `/login` dig oprette dig som admin.
-   Derefter: hent kampene under **Måneder og synk**, fordel holdene under
-   **Medlemmer og hold**, og del loginkoderne ud.
+   Derefter: hent kampene under **Måneder og synk** og fordel holdene under
+   **Medlemmer og hold**.
 
 ## Kommandoer
 

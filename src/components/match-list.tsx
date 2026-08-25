@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { MatchRow } from "@/lib/queries";
 import { formatDateTime } from "@/lib/dates";
 import { Money } from "./ui";
@@ -63,12 +64,15 @@ export function MatchList({ matches }: { matches: MatchRow[] }) {
                       : match.awayTeam.shortName;
                   return (
                     <li
-                      key={`${charge.memberName}-${charge.teamId}-${i}`}
+                      key={`${charge.memberId}-${charge.teamId}-${i}`}
                       className="flex items-baseline justify-between gap-3 text-[14px]"
                     >
-                      <span className="truncate text-ink-soft">
+                      <Link
+                        href={`/medlem/${charge.memberId}`}
+                        className="truncate text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink"
+                      >
                         {charge.memberName} <span className="text-ink-faint">({team})</span>
-                      </span>
+                      </Link>
                       <Money ore={charge.amountOre} className="text-[14px]" />
                     </li>
                   );

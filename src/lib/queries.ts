@@ -315,7 +315,7 @@ export type MatchRow = {
   awayGoals: number | null;
   homeTeam: TeamRef;
   awayTeam: TeamRef;
-  charges: { memberName: string; teamId: number; amountOre: number }[];
+  charges: { memberId: number; memberName: string; teamId: number; amountOre: number }[];
 };
 
 export async function getMatchdays(seasonId: number): Promise<number[]> {
@@ -377,6 +377,7 @@ export async function getMatchesForMatchday(
             matchId: ledgerEntries.matchId,
             teamId: ledgerEntries.teamId,
             amountOre: ledgerEntries.amountOre,
+            memberId: members.id,
             memberName: members.name,
           })
           .from(ledgerEntries)
@@ -392,7 +393,12 @@ export async function getMatchesForMatchday(
   for (const c of chargeRows) {
     if (c.matchId === null || c.teamId === null) continue;
     const list = chargesByMatch.get(c.matchId) ?? [];
-    list.push({ memberName: c.memberName, teamId: c.teamId, amountOre: c.amountOre });
+    list.push({
+      memberId: c.memberId,
+      memberName: c.memberName,
+      teamId: c.teamId,
+      amountOre: c.amountOre,
+    });
     chargesByMatch.set(c.matchId, list);
   }
 
@@ -529,4 +535,13 @@ export async function getAssignmentsByMember(seasonId: number): Promise<Map<numb
     map.set(row.memberId, list);
   }
   return map;
+}
+
+export async function getMemberById(id: number) {
+  const [member] = await db
+    .select({ id: members.id, name: members.name, isActive: members.isActive })
+    .from(members)
+    .where(eq(members.id, id))
+    .limit(1);
+  return member ?? null;
 }

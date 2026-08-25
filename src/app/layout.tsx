@@ -38,7 +38,7 @@ export default async function RootLayout({
   return (
     <html lang="da">
       <body className={`${bricolage.variable} ${plexMono.variable}`}>
-        {session ? <Nav isAdmin={session.isAdmin} memberName={session.name} /> : null}
+        <Nav isAdmin={session?.isAdmin ?? false} memberName={session?.name} />
         <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-6 sm:pb-16 sm:pt-8">
           {children}
         </main>

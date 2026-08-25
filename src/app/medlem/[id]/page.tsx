@@ -1,7 +1,9 @@
-import { requireSession } from "@/lib/auth";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 import { getActiveSeason } from "@/lib/sync";
 import {
   getLockedMonths,
+  getMemberById,
   getMemberEntries,
   getStandings,
   type LedgerRow,
@@ -9,7 +11,6 @@ import {
 import { formatDate, monthKey, monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
 import { Badge, Card, CardHeader, Empty, Money, PageTitle, Stat } from "@/components/ui";
-import { logoutAction } from "@/app/login/actions";
 
 const TYPE_LABELS: Record<LedgerRow["type"], string> = {
   match: "Kamp",
@@ -18,21 +19,30 @@ const TYPE_LABELS: Record<LedgerRow["type"], string> = {
   adjustment: "Regulering",
 };
 
-export default async function MyPage() {
-  const session = await requireSession();
-  const season = await getActiveSeason();
+export default async function MemberPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const memberId = Number(id);
+  if (!Number.isInteger(memberId)) notFound();
 
+  const member = await getMemberById(memberId);
+  if (!member) notFound();
+
+  const season = await getActiveSeason();
   if (!season) {
-    return <PageTitle title="Min side" lead="Sæsonen er ikke sat op endnu." />;
+    return <PageTitle title={member.name} lead="Sæsonen er ikke sat op endnu." />;
   }
 
   const [entries, standings, locked] = await Promise.all([
-    getMemberEntries(season.id, session.id),
+    getMemberEntries(season.id, memberId),
     getStandings(season.id),
     getLockedMonths(season.id),
   ]);
 
-  const me = standings.find((s) => s.memberId === session.id);
+  const stats = standings.find((s) => s.memberId === memberId);
 
   const byMonth = new Map<string, LedgerRow[]>();
   for (const entry of entries) {
@@ -43,31 +53,56 @@ export default async function MyPage() {
   }
   const months = [...byMonth.keys()].sort((a, b) => b.localeCompare(a));
 
+  const draws = entries.filter((e) => e.description.startsWith("Uafgjort")).length;
+  const losses = entries.filter((e) => e.description.startsWith("Nederlag")).length;
+
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle
-        title={session.name}
-        lead={me?.teams.map((t) => t.shortName).join(" og ") || "Du har ikke fået hold endnu."}
-      />
-
-      <div className="grid grid-cols-2 gap-3">
-        <Stat
-          label="Din saldo"
-          ore={me?.balanceOre ?? 0}
-          tone={(me?.balanceOre ?? 0) > 0 ? "debt" : "credit"}
-          hint={(me?.balanceOre ?? 0) > 0 ? "Skal betales" : "Intet udestående"}
-        />
-        <Stat
-          label="Betalt i alt"
-          ore={me?.paidOre ?? 0}
-          tone="credit"
-          hint={`Opkrævet ${formatOre((me?.matchOre ?? 0) + (me?.fineOre ?? 0))}`}
+      <div className="flex flex-col gap-2">
+        <Link href="/tabel" className="text-[14px] text-ink-soft underline">
+          ← Stilling
+        </Link>
+        <PageTitle
+          title={member.name}
+          lead={stats?.teams.map((t) => t.shortName).join(" og ") || "Har ikke fået hold endnu."}
         />
       </div>
 
+      <div className="grid grid-cols-2 gap-3">
+        <Stat
+          label="Saldo"
+          ore={stats?.balanceOre ?? 0}
+          tone={(stats?.balanceOre ?? 0) > 0 ? "debt" : "credit"}
+          hint={(stats?.balanceOre ?? 0) > 0 ? "Mangler at betale" : "Intet udestående"}
+        />
+        <Stat
+          label="Betalt i alt"
+          ore={stats?.paidOre ?? 0}
+          tone="credit"
+          hint={`Opkrævet ${formatOre((stats?.matchOre ?? 0) + (stats?.fineOre ?? 0))}`}
+        />
+      </div>
+
+      <Card>
+        <CardHeader title="Sæsonen indtil nu" />
+        <dl className="grid grid-cols-2 gap-px overflow-hidden bg-rule-soft sm:grid-cols-4">
+          {[
+            { label: "Uafgjorte", value: String(draws) },
+            { label: "Nederlag", value: String(losses) },
+            { label: "Kampe", value: formatOre(stats?.matchOre ?? 0) },
+            { label: "Bøder", value: formatOre(stats?.fineOre ?? 0) },
+          ].map((item) => (
+            <div key={item.label} className="flex flex-col gap-0.5 bg-surface px-4 py-3">
+              <dt className="label">{item.label}</dt>
+              <dd className="num text-[17px]">{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+
       {months.length === 0 ? (
         <Card>
-          <Empty>Ingen posteringer endnu. Held og lykke.</Empty>
+          <Empty>Ingen posteringer endnu.</Empty>
         </Card>
       ) : (
         months.map((key) => {
@@ -106,12 +141,6 @@ export default async function MyPage() {
           );
         })
       )}
-
-      <form action={logoutAction}>
-        <button type="submit" className="text-[14px] text-ink-soft underline">
-          Log ud
-        </button>
-      </form>
     </div>
   );
 }

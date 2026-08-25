@@ -1,11 +1,10 @@
-import { requireSession } from "@/lib/auth";
+import Link from "next/link";
 import { getActiveSeason } from "@/lib/sync";
 import { getStandings, getTeamCosts } from "@/lib/queries";
 import { formatOreBare } from "@/lib/money";
 import { Card, CardHeader, Empty, Money, PageTitle } from "@/components/ui";
 
 export default async function StandingsPage() {
-  const session = await requireSession();
   const season = await getActiveSeason();
   if (!season) {
     return <PageTitle title="Stilling" lead="Sæsonen er ikke sat op endnu." />;
@@ -31,8 +30,12 @@ export default async function StandingsPage() {
                 <tr className="border-b border-rule">
                   <th className="label px-4 py-2 text-left font-normal">Medlem</th>
                   <th className="label px-2 py-2 text-right font-normal">Kampe</th>
-                  <th className="label px-2 py-2 text-right font-normal">Bøder</th>
-                  <th className="label px-2 py-2 text-right font-normal">Betalt</th>
+                  <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
+                    Bøder
+                  </th>
+                  <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
+                    Betalt
+                  </th>
                   <th className="label px-4 py-2 text-right font-normal">Saldo</th>
                 </tr>
               </thead>
@@ -40,24 +43,26 @@ export default async function StandingsPage() {
                 {standings.map((s) => (
                   <tr
                     key={s.memberId}
-                    className={`border-b border-rule-soft last:border-b-0 ${
-                      s.memberId === session.id ? "bg-surface-2" : ""
-                    }`}
+                    className="border-b border-rule-soft transition last:border-b-0 hover:bg-surface-2"
                   >
                     <td className="px-4 py-2.5">
-                      <div className="text-[15px]">{s.name}</div>
-                      <div className="text-[12.5px] text-ink-soft">
-                        {s.teams.map((t) => t.shortName).join(" · ")}
-                      </div>
+                      <Link href={`/medlem/${s.memberId}`} className="block">
+                        <div className="text-[15px] underline decoration-rule underline-offset-4">
+                          {s.name}
+                        </div>
+                        <div className="text-[12.5px] text-ink-soft">
+                          {s.teams.map((t) => t.shortName).join(" · ")}
+                        </div>
+                      </Link>
                     </td>
-                    <td className="num px-2 py-2.5 text-right">{formatOreBare(s.matchOre)}</td>
-                    <td className="num px-2 py-2.5 text-right text-ink-soft">
+                    <td className="num whitespace-nowrap px-2 py-2.5 text-right">{formatOreBare(s.matchOre)}</td>
+                    <td className="num hidden px-2 py-2.5 text-right text-ink-soft sm:table-cell">
                       {s.fineOre === 0 ? "–" : formatOreBare(s.fineOre)}
                     </td>
-                    <td className="num px-2 py-2.5 text-right text-ink-soft">
+                    <td className="num hidden px-2 py-2.5 text-right text-ink-soft sm:table-cell">
                       {s.paidOre === 0 ? "–" : formatOreBare(s.paidOre)}
                     </td>
-                    <td className="px-4 py-2.5 text-right">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right">
                       <Money ore={s.balanceOre} className="text-[14px]" />
                     </td>
                   </tr>

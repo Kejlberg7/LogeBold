@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { requireSession } from "@/lib/auth";
 import { getActiveSeason } from "@/lib/sync";
 import {
   getLatestPlayedMatchday,
@@ -15,7 +14,6 @@ export default async function MatchesPage({
 }: {
   searchParams: Promise<{ runde?: string }>;
 }) {
-  await requireSession();
   const season = await getActiveSeason();
   if (!season) {
     return <PageTitle title="Kampe" lead="Sæsonen er ikke sat op endnu." />;
