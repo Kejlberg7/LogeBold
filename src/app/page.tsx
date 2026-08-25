@@ -95,7 +95,8 @@ export default async function OverviewPage() {
           </div>
           <div className="flex items-center justify-between border-t border-rule-soft px-4 py-3 text-[15px]">
             <span className="text-ink-soft">Indbetalt</span>
-            <Money ore={-thisMonth.paidOre} />
+            {/* Vist som et positivt beløb — "Indbetalt −175 kr" læser forkert. */}
+            <Money ore={thisMonth.paidOre} colored={false} className="text-credit" />
           </div>
         </Card>
       ) : null}
