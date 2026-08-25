@@ -556,3 +556,35 @@ export async function getMemberById(id: number) {
     .limit(1);
   return member ?? null;
 }
+
+export type MemberMonthTotal = { chargedOre: number; paidOre: number };
+
+/**
+ * Opkrævet og indbetalt pr. medlem pr. måned — grundlaget for den besked
+ * admin sender ud, når måneden skal gøres op.
+ */
+export async function getMonthlyMemberTotals(
+  seasonId: number,
+): Promise<Map<string, Map<number, MemberMonthTotal>>> {
+  const rows = await db
+    .select({
+      monthKey: monthKeySql,
+      memberId: ledgerEntries.memberId,
+      type: ledgerEntries.type,
+      total: sql<number>`coalesce(sum(${ledgerEntries.amountOre}), 0)::int`,
+    })
+    .from(ledgerEntries)
+    .where(eq(ledgerEntries.seasonId, seasonId))
+    .groupBy(monthKeySql, ledgerEntries.memberId, ledgerEntries.type);
+
+  const byMonth = new Map<string, Map<number, MemberMonthTotal>>();
+  for (const row of rows) {
+    const month = byMonth.get(row.monthKey) ?? new Map<number, MemberMonthTotal>();
+    const entry = month.get(row.memberId) ?? { chargedOre: 0, paidOre: 0 };
+    if (row.type === "payment") entry.paidOre += -row.total;
+    else entry.chargedOre += row.total;
+    month.set(row.memberId, entry);
+    byMonth.set(row.monthKey, month);
+  }
+  return byMonth;
+}

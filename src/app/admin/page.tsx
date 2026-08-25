@@ -4,12 +4,15 @@ import { getActiveSeason } from "@/lib/sync";
 import {
   getActiveMemberOptions,
   getFineTypes,
+  getMonthlyMemberTotals,
   getPotSummary,
   getRecentManualEntries,
+  getStandings,
 } from "@/lib/queries";
-import { formatDate, toDateInputValue } from "@/lib/dates";
+import { formatDate, monthLabel, toDateInputValue } from "@/lib/dates";
 import { Card, CardHeader, Empty, Money, PageTitle, Stat } from "@/components/ui";
 import { AdjustmentForm, FineForm, PaymentForm } from "@/components/admin-forms";
+import { PaymentRequest, type RequestList } from "@/components/payment-request";
 import { reverseEntryAction } from "./actions";
 
 const TYPE_LABELS = {
@@ -38,14 +41,57 @@ export default async function AdminPage() {
     );
   }
 
-  const [pot, memberOptions, fines, recent] = await Promise.all([
+  const [pot, memberOptions, fines, recent, standings, monthlyTotals] = await Promise.all([
     getPotSummary(season.id),
     getActiveMemberOptions(),
     getFineTypes(season.id),
     getRecentManualEntries(season.id),
+    getStandings(season.id),
+    getMonthlyMemberTotals(season.id),
   ]);
 
   const today = toDateInputValue(new Date());
+
+  // Listen admin sender ud: navn og beløb, klar til at kopiere.
+  const outstanding: RequestList = {
+    key: "skyldig",
+    label: "Alt skyldigt",
+    heading: `Logen ${season.name} — skyldige beløb`,
+    lines: standings
+      .filter((s) => s.balanceOre > 0)
+      .sort((a, b) => b.balanceOre - a.balanceOre)
+      .map((s) => ({
+        name: s.name,
+        ore: s.balanceOre,
+        parts: [
+          { label: "Kampe", ore: s.matchOre },
+          { label: "Bøder", ore: s.fineOre },
+          { label: "Reguleringer", ore: s.adjustmentOre },
+          { label: "Betalt", ore: -s.paidOre },
+        ],
+      })),
+  };
+
+  const nameById = new Map(standings.map((s) => [s.memberId, s.name]));
+  const monthLists: RequestList[] = [...monthlyTotals.keys()]
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, 6)
+    .map((key) => ({
+      key,
+      label: monthLabel(key),
+      heading: `Logen ${season.name} — opkrævet i ${monthLabel(key)}`,
+      lines: [...(monthlyTotals.get(key) ?? new Map())]
+        .map(([memberId, totals]) => ({
+          name: nameById.get(memberId) ?? "Ukendt",
+          ore: totals.chargedOre,
+          parts: [
+            { label: "Opkrævet", ore: totals.chargedOre },
+            { label: "Betalt", ore: -totals.paidOre },
+          ],
+        }))
+        .filter((line) => line.ore > 0)
+        .sort((a, b) => b.ore - a.ore),
+    }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -67,6 +113,17 @@ export default async function AdminPage() {
         <Stat label="I kassen" ore={pot.potOre} tone="credit" />
         <Stat label="Udestående" ore={pot.outstandingOre} tone="debt" />
       </div>
+
+      <Card>
+        <CardHeader title="Opgørelse til logen" />
+        <PaymentRequest lists={[outstanding, ...monthLists]} />
+        <p className="px-4 pb-4 text-[13px] text-ink-soft">
+          <strong className="font-semibold">Alt skyldigt</strong> er hele det udestående beløb —
+          også fra tidligere måneder, og også for runder der falder hen over et månedsskifte.
+          Det er den liste, der skal sendes ud. Månederne ved siden af viser kun, hvad der blev
+          opkrævet i netop den måned.
+        </p>
+      </Card>
 
       <Card>
         <CardHeader title="Registrér indbetaling" />
