@@ -10,6 +10,7 @@ import {
 import { currentMonthKey, monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
 import { Badge, Card, CardHeader, Empty, Money, PageTitle, Stat } from "@/components/ui";
+import { OutstandingTable } from "@/components/outstanding-table";
 import { MatchList } from "@/components/match-list";
 
 export default async function OverviewPage() {
@@ -35,7 +36,22 @@ export default async function OverviewPage() {
 
   const lastRound = latestMatchday ? await getMatchesForMatchday(season.id, latestMatchday) : [];
   const thisMonth = monthly.find((m) => m.monthKey === currentMonthKey());
-  const topSpenders = [...standings].slice(0, 5);
+  const owing = standings
+    .filter((s) => s.balanceOre > 0)
+    .sort((a, b) => b.balanceOre - a.balanceOre)
+    .map((s) => ({
+      memberId: s.memberId,
+      name: s.name,
+      matchOre: s.matchOre,
+      fineOre: s.fineOre,
+      adjustmentOre: s.adjustmentOre,
+      paidOre: s.paidOre,
+      balanceOre: s.balanceOre,
+    }));
+
+  const settled = standings
+    .filter((s) => s.balanceOre <= 0 && s.paidOre > 0)
+    .map((s) => s.name);
 
   return (
     <div className="flex flex-col gap-7">
@@ -76,38 +92,18 @@ export default async function OverviewPage() {
 
       <Card>
         <CardHeader
-          title="Dyreste medlemmer"
+          title="Hvem skylder hvad"
           action={
             <Link href="/tabel" className="text-[14px] text-ink-soft underline">
-              Hele tabellen
+              Hele stillingen
             </Link>
           }
         />
-        {topSpenders.length === 0 ? (
-          <Empty>Ingen medlemmer endnu.</Empty>
-        ) : (
-          <ul>
-            {topSpenders.map((s, i) => (
-              <li key={s.memberId} className="border-b border-rule-soft last:border-b-0">
-                <Link
-                  href={`/medlem/${s.memberId}`}
-                  className="flex items-center justify-between gap-3 px-4 py-3 transition hover:bg-surface-2"
-                >
-                  <div className="flex min-w-0 items-baseline gap-3">
-                    <span className="num w-5 shrink-0 text-[13px] text-ink-faint">{i + 1}</span>
-                    <div className="min-w-0">
-                      <div className="truncate text-[15px]">{s.name}</div>
-                      <div className="truncate text-[13px] text-ink-soft">
-                        {s.teams.map((t) => t.shortName).join(" · ")}
-                      </div>
-                    </div>
-                  </div>
-                  <Money ore={s.matchOre + s.fineOre} colored={false} className="text-[15px]" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        <OutstandingTable
+          rows={owing}
+          settled={settled}
+          heading={`Logen ${season.name} — skyldige beløb`}
+        />
       </Card>
 
       <Card>
