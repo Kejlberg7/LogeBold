@@ -261,31 +261,31 @@ export type TeamCost = {
 };
 
 export async function getTeamCosts(seasonId: number): Promise<TeamCost[]> {
-  const [rows, ownerRows] = await Promise.all([
+  // Ejere og posteringer hentes hver for sig. Slås de sammen i én forespørgsel,
+  // ganges beløbet med antallet af ejere — et hold med fire ejere ville vise
+  // fire gange for meget.
+  const [teamRows, ledgerRows, ownerRows] = await Promise.all([
     db
-      .select({
+      .selectDistinct({
         teamId: teams.id,
         shortName: teams.shortName,
         crestUrl: teams.crestUrl,
-        totalOre: sql<number>`coalesce(sum(${ledgerEntries.amountOre}), 0)::int`,
-        // Deles et hold af flere, tælles kampen stadig kun én gang.
-        draws: sql<number>`count(distinct ${ledgerEntries.matchId}) filter (where ${ledgerEntries.description} like 'Uafgjort%')::int`,
-        losses: sql<number>`count(distinct ${ledgerEntries.matchId}) filter (where ${ledgerEntries.description} like 'Nederlag%')::int`,
       })
       .from(teams)
       .innerJoin(
         assignments,
         and(eq(assignments.teamId, teams.id), eq(assignments.seasonId, seasonId)),
-      )
-      .leftJoin(
-        ledgerEntries,
-        and(
-          eq(ledgerEntries.teamId, teams.id),
-          eq(ledgerEntries.seasonId, seasonId),
-          eq(ledgerEntries.type, "match"),
-        ),
-      )
-      .groupBy(teams.id, teams.shortName, teams.crestUrl),
+      ),
+    db
+      .select({
+        teamId: ledgerEntries.teamId,
+        totalOre: sql<number>`coalesce(sum(${ledgerEntries.amountOre}), 0)::int`,
+        draws: sql<number>`count(distinct ${ledgerEntries.matchId}) filter (where ${ledgerEntries.description} like 'Uafgjort%')::int`,
+        losses: sql<number>`count(distinct ${ledgerEntries.matchId}) filter (where ${ledgerEntries.description} like 'Nederlag%')::int`,
+      })
+      .from(ledgerEntries)
+      .where(and(eq(ledgerEntries.seasonId, seasonId), eq(ledgerEntries.type, "match")))
+      .groupBy(ledgerEntries.teamId),
     db
       .select({ teamId: assignments.teamId, name: members.name })
       .from(assignments)
@@ -294,6 +294,8 @@ export async function getTeamCosts(seasonId: number): Promise<TeamCost[]> {
       .orderBy(asc(members.name)),
   ]);
 
+  const ledgerByTeam = new Map(ledgerRows.map((r) => [r.teamId, r]));
+
   const ownersByTeam = new Map<number, string[]>();
   for (const row of ownerRows) {
     const list = ownersByTeam.get(row.teamId) ?? [];
@@ -301,8 +303,17 @@ export async function getTeamCosts(seasonId: number): Promise<TeamCost[]> {
     ownersByTeam.set(row.teamId, list);
   }
 
-  return rows
-    .map((r) => ({ ...r, owners: ownersByTeam.get(r.teamId) ?? [] }))
+  return teamRows
+    .map((team) => {
+      const ledger = ledgerByTeam.get(team.teamId);
+      return {
+        ...team,
+        owners: ownersByTeam.get(team.teamId) ?? [],
+        totalOre: ledger?.totalOre ?? 0,
+        draws: ledger?.draws ?? 0,
+        losses: ledger?.losses ?? 0,
+      };
+    })
     .sort((a, b) => b.totalOre - a.totalOre || a.shortName.localeCompare(b.shortName, "da"));
 }
 
