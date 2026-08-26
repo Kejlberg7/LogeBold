@@ -35,6 +35,9 @@ export default async function OverviewPage() {
   ]);
 
   const lastRound = latestMatchday ? await getMatchesForMatchday(season.id, latestMatchday) : [];
+
+  // Runden hentes i spillerækkefølge. Her vil man se de nyeste resultater først.
+  const newestFirst = [...lastRound].sort((a, b) => b.kickoff.getTime() - a.kickoff.getTime());
   const thisMonth = monthly.find((m) => m.monthKey === currentMonthKey());
   const owing = standings
     .filter((s) => s.balanceOre > 0)
@@ -118,7 +121,7 @@ export default async function OverviewPage() {
         {lastRound.length === 0 ? (
           <Empty>Ingen spillede kampe endnu.</Empty>
         ) : (
-          <MatchList matches={lastRound.slice(0, 5)} />
+          <MatchList matches={newestFirst.slice(0, 5)} />
         )}
       </Card>
 
