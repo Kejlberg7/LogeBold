@@ -61,7 +61,7 @@ export function OutstandingTable({
             <tr className="border-b border-rule">
               <th className="label px-4 py-2 text-left font-normal">Medlem</th>
               <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
-                Kampe
+                I alt
               </th>
               <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
                 Bøder
@@ -77,7 +77,10 @@ export function OutstandingTable({
               <tr key={row.memberId} className="border-b border-rule-soft last:border-b-0">
                 <td className="px-4 py-2.5 text-[15px]">{row.name}</td>
                 <td className="num hidden whitespace-nowrap px-2 py-2.5 text-right text-ink-soft sm:table-cell">
-                  {row.matchOre === 0 ? "–" : formatOreBare(row.matchOre)}
+                  {/* Alt hvad der er opkrævet: kampe, bøder og reguleringer. */}
+                  {row.matchOre + row.fineOre + row.adjustmentOre === 0
+                    ? "–"
+                    : formatOreBare(row.matchOre + row.fineOre + row.adjustmentOre)}
                 </td>
                 <td className="num hidden whitespace-nowrap px-2 py-2.5 text-right text-ink-soft sm:table-cell">
                   {row.fineOre === 0 ? "–" : formatOreBare(row.fineOre)}

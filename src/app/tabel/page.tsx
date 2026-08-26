@@ -29,7 +29,7 @@ export default async function StandingsPage() {
               <thead>
                 <tr className="border-b border-rule">
                   <th className="label px-4 py-2 text-left font-normal">Medlem</th>
-                  <th className="label px-2 py-2 text-right font-normal">Kampe</th>
+                  <th className="label px-2 py-2 text-right font-normal">I alt</th>
                   <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
                     Bøder
                   </th>
@@ -55,7 +55,10 @@ export default async function StandingsPage() {
                         </div>
                       </Link>
                     </td>
-                    <td className="num whitespace-nowrap px-2 py-2.5 text-right">{formatOreBare(s.matchOre)}</td>
+                    <td className="num whitespace-nowrap px-2 py-2.5 text-right">
+                      {/* Alt hvad der er opkrævet: kampe, bøder og reguleringer. */}
+                      {formatOreBare(s.matchOre + s.fineOre + s.adjustmentOre)}
+                    </td>
                     <td className="num hidden px-2 py-2.5 text-right text-ink-soft sm:table-cell">
                       {s.fineOre === 0 ? "–" : formatOreBare(s.fineOre)}
                     </td>
