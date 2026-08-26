@@ -12,8 +12,7 @@
     "db:studio": "node --env-file=.env.local ./node_modules/.bin/drizzle-kit studio",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "sync": "tsx --env-file=.env.local scripts/sync.ts",
-    "recalc": "tsx --env-file=.env.local scripts/recalc.ts",
-    "deploy": "./scripts/deploy.sh"
+    "recalc": "tsx --env-file=.env.local scripts/recalc.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
