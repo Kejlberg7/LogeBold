@@ -53,7 +53,10 @@ export function MatchList({ matches }: { matches: MatchRow[] }) {
               )}
             </div>
 
-            <div className="mt-0.5 text-[13px] text-ink-soft">{formatDateTime(match.kickoff)}</div>
+            <div className="mt-0.5 text-[13px] text-ink-soft">
+              {formatDateTime(match.kickoff)}
+              {match.matchday ? ` · runde ${match.matchday}` : ""}
+            </div>
 
             {match.charges.length > 0 ? (
               <ul className="mt-2 flex flex-col gap-1">

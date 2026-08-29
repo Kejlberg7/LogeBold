@@ -347,38 +347,33 @@ export async function getLatestPlayedMatchday(seasonId: number): Promise<number 
   return row?.matchday ?? null;
 }
 
-export async function getMatchesForMatchday(
-  seasonId: number,
-  matchday: number,
-): Promise<MatchRow[]> {
-  const rows = await db.execute<{
-    id: number;
-    matchday: number | null;
-    kickoff: Date;
-    status: string;
-    home_goals: number | null;
-    away_goals: number | null;
-    home_id: number;
-    home_name: string;
-    home_short: string;
-    home_tla: string | null;
-    home_crest: string | null;
-    away_id: number;
-    away_name: string;
-    away_short: string;
-    away_tla: string | null;
-    away_crest: string | null;
-  }>(sql`
-    select m.id, m.matchday, m.kickoff, m.status, m.home_goals, m.away_goals,
-           h.id as home_id, h.name as home_name, h.short_name as home_short, h.tla as home_tla, h.crest_url as home_crest,
-           a.id as away_id, a.name as away_name, a.short_name as away_short, a.tla as away_tla, a.crest_url as away_crest
-    from matches m
-    join teams h on h.id = m.home_team_id
-    join teams a on a.id = m.away_team_id
-    where m.season_id = ${seasonId} and m.matchday = ${matchday}
-    order by m.kickoff asc, h.short_name asc
-  `);
+type MatchSqlRow = {
+  id: number;
+  matchday: number | null;
+  kickoff: Date;
+  status: string;
+  home_goals: number | null;
+  away_goals: number | null;
+  home_id: number;
+  home_name: string;
+  home_short: string;
+  home_tla: string | null;
+  home_crest: string | null;
+  away_id: number;
+  away_name: string;
+  away_short: string;
+  away_tla: string | null;
+  away_crest: string | null;
+};
 
+const MATCH_COLUMNS = sql`
+  m.id, m.matchday, m.kickoff, m.status, m.home_goals, m.away_goals,
+  h.id as home_id, h.name as home_name, h.short_name as home_short, h.tla as home_tla, h.crest_url as home_crest,
+  a.id as away_id, a.name as away_name, a.short_name as away_short, a.tla as away_tla, a.crest_url as away_crest
+`;
+
+/** Hænger opkrævningerne på kampene, så man kan se hvem hver kamp kostede. */
+async function withCharges(rows: MatchSqlRow[]): Promise<MatchRow[]> {
   const matchIds = rows.map((r) => r.id);
   const chargeRows =
     matchIds.length === 0
@@ -394,10 +389,7 @@ export async function getMatchesForMatchday(
           .from(ledgerEntries)
           .innerJoin(members, eq(members.id, ledgerEntries.memberId))
           .where(
-            and(
-              eq(ledgerEntries.type, "match"),
-              inArray(ledgerEntries.matchId, matchIds),
-            ),
+            and(eq(ledgerEntries.type, "match"), inArray(ledgerEntries.matchId, matchIds)),
           );
 
   const chargesByMatch = new Map<number, MatchRow["charges"]>();
@@ -436,6 +428,40 @@ export async function getMatchesForMatchday(
     },
     charges: chargesByMatch.get(r.id) ?? [],
   }));
+}
+
+export async function getMatchesForMatchday(
+  seasonId: number,
+  matchday: number,
+): Promise<MatchRow[]> {
+  const rows = await db.execute<MatchSqlRow>(sql`
+    select ${MATCH_COLUMNS}
+    from matches m
+    join teams h on h.id = m.home_team_id
+    join teams a on a.id = m.away_team_id
+    where m.season_id = ${seasonId} and m.matchday = ${matchday}
+    order by m.kickoff asc, h.short_name asc
+  `);
+  return withCharges(rows);
+}
+
+/** De senest spillede kampe på tværs af runder — det forsiden viser. */
+export async function getLatestPlayedMatches(
+  seasonId: number,
+  limit = 5,
+): Promise<MatchRow[]> {
+  const rows = await db.execute<MatchSqlRow>(sql`
+    select ${MATCH_COLUMNS}
+    from matches m
+    join teams h on h.id = m.home_team_id
+    join teams a on a.id = m.away_team_id
+    where m.season_id = ${seasonId}
+      and m.status in ('FINISHED', 'AWARDED')
+      and m.home_goals is not null
+    order by m.kickoff desc, h.short_name asc
+    limit ${limit}
+  `);
+  return withCharges(rows);
 }
 
 /* --------------------------------------------------------------- admin-opslag */

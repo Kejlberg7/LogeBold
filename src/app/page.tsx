@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { getActiveSeason } from "@/lib/sync";
 import {
-  getLatestPlayedMatchday,
-  getMatchesForMatchday,
+  getLatestPlayedMatches,
   getMonthlySummary,
   getPotSummary,
   getStandings,
@@ -27,17 +26,12 @@ export default async function OverviewPage() {
     );
   }
 
-  const [pot, standings, monthly, latestMatchday] = await Promise.all([
+  const [pot, standings, monthly, latestMatches] = await Promise.all([
     getPotSummary(season.id),
     getStandings(season.id),
     getMonthlySummary(season.id),
-    getLatestPlayedMatchday(season.id),
+    getLatestPlayedMatches(season.id, 5),
   ]);
-
-  const lastRound = latestMatchday ? await getMatchesForMatchday(season.id, latestMatchday) : [];
-
-  // Runden hentes i spillerækkefølge. Her vil man se de nyeste resultater først.
-  const newestFirst = [...lastRound].sort((a, b) => b.kickoff.getTime() - a.kickoff.getTime());
   const thisMonth = monthly.find((m) => m.monthKey === currentMonthKey());
   const owing = standings
     .filter((s) => s.balanceOre > 0)
@@ -111,17 +105,17 @@ export default async function OverviewPage() {
 
       <Card>
         <CardHeader
-          title={latestMatchday ? `Seneste runde · runde ${latestMatchday}` : "Seneste runde"}
+          title="Seneste resultater"
           action={
             <Link href="/kampe" className="text-[14px] text-ink-soft underline">
               Alle runder
             </Link>
           }
         />
-        {lastRound.length === 0 ? (
+        {latestMatches.length === 0 ? (
           <Empty>Ingen spillede kampe endnu.</Empty>
         ) : (
-          <MatchList matches={newestFirst.slice(0, 5)} />
+          <MatchList matches={latestMatches} />
         )}
       </Card>
 
