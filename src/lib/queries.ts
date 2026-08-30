@@ -222,6 +222,8 @@ export type LedgerRow = {
   note: string | null;
   paymentMethod: string | null;
   teamShortName: string | null;
+  matchId: number | null;
+  teamId: number | null;
   matchday: number | null;
   reversesEntryId: number | null;
 };
@@ -240,6 +242,8 @@ export async function getMemberEntries(
       note: ledgerEntries.note,
       paymentMethod: ledgerEntries.paymentMethod,
       teamShortName: teams.shortName,
+      matchId: ledgerEntries.matchId,
+      teamId: ledgerEntries.teamId,
       matchday: matches.matchday,
       reversesEntryId: ledgerEntries.reversesEntryId,
     })
@@ -462,6 +466,80 @@ export async function getLatestPlayedMatches(
     limit ${limit}
   `);
   return withCharges(rows);
+}
+
+export type MemberMatchRow = {
+  matchId: number;
+  teamId: number;
+  matchday: number | null;
+  kickoff: Date;
+  outcome: "win" | "draw" | "loss";
+  amountOre: number;
+  scoreline: string;
+  teamShortName: string;
+};
+
+/**
+ * Alle spillede kampe for et medlems hold — også sejrene, der ikke koster noget.
+ * Ejer et medlem begge hold i samme kamp, giver kampen to rækker, én pr. hold.
+ */
+export async function getMemberMatches(
+  seasonId: number,
+  memberId: number,
+): Promise<MemberMatchRow[]> {
+  const rows = await db.execute<{
+    match_id: number;
+    matchday: number | null;
+    kickoff: Date;
+    home_goals: number;
+    away_goals: number;
+    team_id: number;
+    team_short: string;
+    home_short: string;
+    away_short: string;
+    is_home: boolean;
+    amount_ore: number;
+  }>(sql`
+    select
+      m.id as match_id, m.matchday, m.kickoff, m.home_goals, m.away_goals,
+      t.id as team_id, t.short_name as team_short,
+      h.short_name as home_short, a.short_name as away_short,
+      (m.home_team_id = t.id) as is_home,
+      coalesce(le.amount_ore, 0) as amount_ore
+    from assignments asg
+    join teams t on t.id = asg.team_id
+    join matches m
+      on m.season_id = asg.season_id
+     and (m.home_team_id = t.id or m.away_team_id = t.id)
+    join teams h on h.id = m.home_team_id
+    join teams a on a.id = m.away_team_id
+    left join ledger_entries le
+      on le.match_id = m.id
+     and le.team_id = t.id
+     and le.member_id = asg.member_id
+     and le.type = 'match'
+    where asg.season_id = ${seasonId}
+      and asg.member_id = ${memberId}
+      and m.status in ('FINISHED', 'AWARDED')
+      and m.home_goals is not null
+      and m.away_goals is not null
+    order by m.kickoff desc, t.short_name asc
+  `);
+
+  return rows.map((r) => {
+    const own = r.is_home ? r.home_goals : r.away_goals;
+    const other = r.is_home ? r.away_goals : r.home_goals;
+    return {
+      matchId: r.match_id,
+      teamId: r.team_id,
+      matchday: r.matchday,
+      kickoff: new Date(r.kickoff),
+      outcome: own > other ? ("win" as const) : own === other ? ("draw" as const) : ("loss" as const),
+      amountOre: r.amount_ore,
+      scoreline: `${r.home_short} ${r.home_goals}-${r.away_goals} ${r.away_short}`,
+      teamShortName: r.team_short,
+    };
+  });
 }
 
 /* --------------------------------------------------------------- admin-opslag */
