@@ -120,9 +120,28 @@ async function upsertMatches(
         set: {
           matchday: sql`excluded.matchday`,
           kickoff: sql`excluded.kickoff`,
-          status: sql`excluded.status`,
-          homeGoals: sql`excluded.home_goals`,
-          awayGoals: sql`excluded.away_goals`,
+          // football-data.org kan midlertidigt glemme et resultat og sende en
+          // allerede afsluttet kamp som TIMED uden score. Et bekræftet resultat
+          // må ikke nedgraderes af sådan et ufuldstændigt svar. Kommer der et
+          // nyt afsluttet resultat, accepteres det stadig som en rettelse.
+          status: sql`case
+            when ${matches.status} in ('FINISHED', 'AWARDED')
+              and excluded.status not in ('FINISHED', 'AWARDED')
+            then ${matches.status}
+            else excluded.status
+          end`,
+          homeGoals: sql`case
+            when ${matches.status} in ('FINISHED', 'AWARDED')
+              and excluded.status not in ('FINISHED', 'AWARDED')
+            then ${matches.homeGoals}
+            else excluded.home_goals
+          end`,
+          awayGoals: sql`case
+            when ${matches.status} in ('FINISHED', 'AWARDED')
+              and excluded.status not in ('FINISHED', 'AWARDED')
+            then ${matches.awayGoals}
+            else excluded.away_goals
+          end`,
           lastSyncedAt: sql`excluded.last_synced_at`,
         },
       });
