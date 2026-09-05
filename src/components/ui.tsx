@@ -26,7 +26,7 @@ export function CardHeader({ title, action }: { title: string; action?: ReactNod
   );
 }
 
-export function PageTitle({ title, lead }: { title: string; lead?: string }) {
+export function PageTitle({ title, lead }: { title: string; lead?: ReactNode }) {
   return (
     <div className="flex flex-col gap-1">
       <h1 className="display text-3xl sm:text-4xl">{title}</h1>

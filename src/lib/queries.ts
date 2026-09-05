@@ -264,7 +264,7 @@ export type TeamCost = {
   teamId: number;
   shortName: string;
   crestUrl: string | null;
-  owners: string[];
+  owners: { memberId: number; name: string }[];
   totalOre: number;
   draws: number;
   losses: number;
@@ -297,7 +297,7 @@ export async function getTeamCosts(seasonId: number): Promise<TeamCost[]> {
       .where(and(eq(ledgerEntries.seasonId, seasonId), eq(ledgerEntries.type, "match")))
       .groupBy(ledgerEntries.teamId),
     db
-      .select({ teamId: assignments.teamId, name: members.name })
+      .select({ teamId: assignments.teamId, memberId: members.id, name: members.name })
       .from(assignments)
       .innerJoin(members, eq(members.id, assignments.memberId))
       .where(eq(assignments.seasonId, seasonId))
@@ -306,10 +306,10 @@ export async function getTeamCosts(seasonId: number): Promise<TeamCost[]> {
 
   const ledgerByTeam = new Map(ledgerRows.map((r) => [r.teamId, r]));
 
-  const ownersByTeam = new Map<number, string[]>();
+  const ownersByTeam = new Map<number, TeamCost["owners"]>();
   for (const row of ownerRows) {
     const list = ownersByTeam.get(row.teamId) ?? [];
-    list.push(row.name);
+    list.push({ memberId: row.memberId, name: row.name });
     ownersByTeam.set(row.teamId, list);
   }
 
@@ -338,6 +338,34 @@ export type MatchRow = {
   awayTeam: TeamRef;
   charges: { memberId: number; memberName: string; teamId: number; amountOre: number }[];
 };
+
+export async function getTeamById(teamId: number): Promise<TeamRef | null> {
+  const [row] = await db
+    .select({
+      id: teams.id,
+      name: teams.name,
+      shortName: teams.shortName,
+      tla: teams.tla,
+      crestUrl: teams.crestUrl,
+    })
+    .from(teams)
+    .where(eq(teams.id, teamId))
+    .limit(1);
+  return row ?? null;
+}
+
+/** Dem der har trukket holdet i sæsonen. Flere kan dele det samme hold. */
+export async function getTeamOwners(
+  seasonId: number,
+  teamId: number,
+): Promise<{ memberId: number; name: string }[]> {
+  return db
+    .select({ memberId: members.id, name: members.name })
+    .from(assignments)
+    .innerJoin(members, eq(members.id, assignments.memberId))
+    .where(and(eq(assignments.seasonId, seasonId), eq(assignments.teamId, teamId)))
+    .orderBy(asc(members.name));
+}
 
 export async function getMatchdays(seasonId: number): Promise<number[]> {
   const rows = await db
@@ -470,6 +498,20 @@ export async function getLatestPlayedMatches(
       and m.home_goals is not null
     order by m.kickoff desc, h.short_name asc
     limit ${limit}
+  `);
+  return withCharges(rows);
+}
+
+/** Holdets kampe i sæsonen, nyeste først — med hvad hver af dem kostede. */
+export async function getTeamMatches(seasonId: number, teamId: number): Promise<MatchRow[]> {
+  const rows = await db.execute<MatchSqlRow>(sql`
+    select ${MATCH_COLUMNS}
+    from matches m
+    join teams h on h.id = m.home_team_id
+    join teams a on a.id = m.away_team_id
+    where m.season_id = ${seasonId}
+      and (m.home_team_id = ${teamId} or m.away_team_id = ${teamId})
+    order by m.kickoff desc
   `);
   return withCharges(rows);
 }

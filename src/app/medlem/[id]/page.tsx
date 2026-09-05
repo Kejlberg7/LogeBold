@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getActiveSeason } from "@/lib/sync";
@@ -34,7 +35,7 @@ type Item = {
   /** Måneden posteringen opkræves i — ikke nødvendigvis den måned datoen ligger i. */
   month: string;
   title: string;
-  meta: string;
+  meta: ReactNode;
   amountOre: number;
   /** Ligger datoen uden for den måned den opkræves i? */
   moved: boolean;
@@ -73,7 +74,18 @@ export default async function MemberPage({
     occurredAt: m.kickoff,
     month: m.billingMonth,
     title: `${OUTCOME_LABELS[m.outcome]}: ${m.scoreline}`,
-    meta: `${formatDate(m.kickoff)} · ${m.teamShortName}${m.matchday ? ` · runde ${m.matchday}` : ""}`,
+    meta: (
+      <>
+        {formatDate(m.kickoff)} ·{" "}
+        <Link
+          href={`/hold/${m.teamId}`}
+          className="underline decoration-rule underline-offset-4 hover:text-ink"
+        >
+          {m.teamShortName}
+        </Link>
+        {m.matchday ? ` · runde ${m.matchday}` : ""}
+      </>
+    ),
     amountOre: m.amountOre,
     moved: m.billingMonth !== monthKey(m.kickoff),
   }));
@@ -125,7 +137,23 @@ export default async function MemberPage({
         </Link>
         <PageTitle
           title={member.name}
-          lead={stats?.teams.map((t) => t.shortName).join(" og ") || "Har ikke fået hold endnu."}
+          lead={
+            stats && stats.teams.length > 0 ? (
+              stats.teams.map((t, i) => (
+                <span key={t.id}>
+                  {i > 0 ? " og " : ""}
+                  <Link
+                    href={`/hold/${t.id}`}
+                    className="underline decoration-rule underline-offset-4"
+                  >
+                    {t.shortName}
+                  </Link>
+                </span>
+              ))
+            ) : (
+              "Har ikke fået hold endnu."
+            )
+          }
         />
       </div>
 

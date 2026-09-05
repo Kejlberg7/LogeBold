@@ -14,16 +14,19 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 function TeamName({
-  name,
+  team,
   bold,
-  className = "",
 }: {
-  name: string;
+  team: { id: number; shortName: string };
   bold: boolean;
-  className?: string;
 }) {
   return (
-    <span className={`${bold ? "font-semibold" : ""} ${className}`}>{name}</span>
+    <Link
+      href={`/hold/${team.id}`}
+      className={`underline decoration-rule underline-offset-4 ${bold ? "font-semibold" : ""}`}
+    >
+      {team.shortName}
+    </Link>
   );
 }
 
@@ -47,9 +50,9 @@ export function MatchList({
           <li key={match.id} className="border-b border-rule-soft px-4 py-3 last:border-b-0">
             <div className="flex items-baseline justify-between gap-3">
               <div className="min-w-0 text-[15px]">
-                <TeamName name={match.homeTeam.shortName} bold={homeWon} />
+                <TeamName team={match.homeTeam} bold={homeWon} />
                 <span className="text-ink-faint"> – </span>
-                <TeamName name={match.awayTeam.shortName} bold={awayWon} />
+                <TeamName team={match.awayTeam} bold={awayWon} />
               </div>
               {played ? (
                 <span className="num shrink-0 text-[15px] font-semibold">
@@ -81,12 +84,21 @@ export function MatchList({
                       key={`${charge.memberId}-${charge.teamId}-${i}`}
                       className="flex items-baseline justify-between gap-3 text-[14px]"
                     >
-                      <Link
-                        href={`/medlem/${charge.memberId}`}
-                        className="truncate text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink"
-                      >
-                        {charge.memberName} <span className="text-ink-faint">({team})</span>
-                      </Link>
+                      {/* To links ved siden af hinanden — et link i et link er ikke gyldigt. */}
+                      <span className="min-w-0 truncate">
+                        <Link
+                          href={`/medlem/${charge.memberId}`}
+                          className="text-ink-soft underline decoration-rule underline-offset-4 hover:text-ink"
+                        >
+                          {charge.memberName}
+                        </Link>{" "}
+                        <Link
+                          href={`/hold/${charge.teamId}`}
+                          className="text-ink-faint underline decoration-rule underline-offset-4 hover:text-ink"
+                        >
+                          ({team})
+                        </Link>
+                      </span>
                       <Money ore={charge.amountOre} className="text-[14px]" />
                     </li>
                   );

@@ -46,14 +46,26 @@ export default async function StandingsPage() {
                     className="border-b border-rule-soft transition last:border-b-0 hover:bg-surface-2"
                   >
                     <td className="px-4 py-2.5">
-                      <Link href={`/medlem/${s.memberId}`} className="block">
-                        <div className="text-[15px] underline decoration-rule underline-offset-4">
-                          {s.name}
-                        </div>
-                        <div className="text-[12.5px] text-ink-soft">
-                          {s.teams.map((t) => t.shortName).join(" · ")}
-                        </div>
+                      {/* Navn og hold er hvert sit link — et link i et link er ikke gyldigt. */}
+                      <Link
+                        href={`/medlem/${s.memberId}`}
+                        className="block text-[15px] underline decoration-rule underline-offset-4"
+                      >
+                        {s.name}
                       </Link>
+                      <div className="text-[12.5px] text-ink-soft">
+                        {s.teams.map((t, i) => (
+                          <span key={t.id}>
+                            {i > 0 ? " · " : ""}
+                            <Link
+                              href={`/hold/${t.id}`}
+                              className="underline decoration-rule underline-offset-4 hover:text-ink"
+                            >
+                              {t.shortName}
+                            </Link>
+                          </span>
+                        ))}
+                      </div>
                     </td>
                     <td className="num whitespace-nowrap px-2 py-2.5 text-right">
                       {/* Alt hvad der er opkrævet: kampe, bøder og reguleringer. */}
@@ -93,11 +105,31 @@ export default async function StandingsPage() {
               </thead>
               <tbody>
                 {teamCosts.map((t) => (
-                  <tr key={t.teamId} className="border-b border-rule-soft last:border-b-0">
+                  <tr
+                    key={t.teamId}
+                    className="border-b border-rule-soft transition last:border-b-0 hover:bg-surface-2"
+                  >
                     <td className="px-4 py-2.5">
-                      <div className="text-[15px]">{t.shortName}</div>
+                      <Link
+                        href={`/hold/${t.teamId}`}
+                        className="block text-[15px] underline decoration-rule underline-offset-4"
+                      >
+                        {t.shortName}
+                      </Link>
                       <div className="text-[12.5px] text-ink-soft">
-                        {t.owners.length > 0 ? t.owners.join(" · ") : "Ingen ejer"}
+                        {t.owners.length === 0
+                          ? "Ingen ejer"
+                          : t.owners.map((owner, i) => (
+                              <span key={owner.memberId}>
+                                {i > 0 ? " · " : ""}
+                                <Link
+                                  href={`/medlem/${owner.memberId}`}
+                                  className="underline decoration-rule underline-offset-4 hover:text-ink"
+                                >
+                                  {owner.name}
+                                </Link>
+                              </span>
+                            ))}
                       </div>
                     </td>
                     <td className="num px-2 py-2.5 text-right text-ink-soft">{t.draws}</td>
