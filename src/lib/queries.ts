@@ -595,7 +595,7 @@ export type PeriodOverview = {
  * den måned runden hører til. Uden datoerne kan man ikke se det på forsiden.
  * Kun spillede kampe tælles med — det er dem der er blevet til penge.
  */
-async function getMonthSpans(seasonId: number): Promise<Map<string, MonthSpan>> {
+export async function getBillingPeriods(seasonId: number): Promise<Map<string, MonthSpan>> {
   const rows = await db.execute<MatchSqlRow & { billing_month: string; kickoff_month: string }>(sql`
     select ${MATCH_COLUMNS},
       coalesce(
@@ -689,7 +689,7 @@ export async function getPeriodOverview(
 ): Promise<PeriodOverview | null> {
   const [{ months, members: memberRows, perMonth }, spans] = await Promise.all([
     allocatePayments(seasonId),
-    getMonthSpans(seasonId),
+    getBillingPeriods(seasonId),
   ]);
   if (months.length === 0) return null;
 

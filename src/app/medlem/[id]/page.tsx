@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getActiveSeason } from "@/lib/sync";
 import {
+  getBillingPeriods,
   getLockedMonths,
   getMemberById,
   getMemberEntries,
@@ -9,7 +10,7 @@ import {
   getStandings,
   type LedgerRow,
 } from "@/lib/queries";
-import { formatDate, monthKey, monthLabel } from "@/lib/dates";
+import { formatDate, formatDateRange, monthKey, monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
 import { Badge, Card, CardHeader, Empty, Money, PageTitle, Stat } from "@/components/ui";
 
@@ -35,6 +36,8 @@ type Item = {
   title: string;
   meta: string;
   amountOre: number;
+  /** Ligger datoen uden for den måned den opkræves i? */
+  moved: boolean;
 };
 
 export default async function MemberPage({
@@ -54,11 +57,12 @@ export default async function MemberPage({
     return <PageTitle title={member.name} lead="Sæsonen er ikke sat op endnu." />;
   }
 
-  const [entries, matchRows, standings, locked] = await Promise.all([
+  const [entries, matchRows, standings, locked, periods] = await Promise.all([
     getMemberEntries(season.id, memberId),
     getMemberMatches(season.id, memberId),
     getStandings(season.id),
     getLockedMonths(season.id),
+    getBillingPeriods(season.id),
   ]);
 
   const stats = standings.find((s) => s.memberId === memberId);
@@ -71,6 +75,7 @@ export default async function MemberPage({
     title: `${OUTCOME_LABELS[m.outcome]}: ${m.scoreline}`,
     meta: `${formatDate(m.kickoff)} · ${m.teamShortName}${m.matchday ? ` · runde ${m.matchday}` : ""}`,
     amountOre: m.amountOre,
+    moved: m.billingMonth !== monthKey(m.kickoff),
   }));
 
   // Posteringer der ikke er kampe — bøder, indbetalinger, reguleringer. Skulle en
@@ -90,6 +95,8 @@ export default async function MemberPage({
         entry.paymentMethod ? ` · ${entry.paymentMethod}` : ""
       }${entry.matchday ? ` · runde ${entry.matchday}` : ""}`,
       amountOre: entry.amountOre,
+      moved:
+        entry.billingMonth !== null && entry.billingMonth !== monthKey(entry.occurredAt),
     });
   }
 
@@ -165,6 +172,12 @@ export default async function MemberPage({
         months.map((key) => {
           const rows = byMonth.get(key)!;
           const total = rows.reduce((sum, r) => sum + r.amountOre, 0);
+          const period = periods.get(key);
+          // Samme periode som forsiden viser — en runde hen over et månedsskifte
+          // opkræves samlet, og så dækker "august" mere end august.
+          const spillMonths = period
+            ? [...new Set([monthKey(period.from), monthKey(period.to)])].filter((m) => m !== key)
+            : [];
           return (
             <Card key={key}>
               <CardHeader
@@ -176,6 +189,17 @@ export default async function MemberPage({
                   </span>
                 }
               />
+              {period ? (
+                <div className="border-b border-rule-soft px-4 py-2 text-[13px] text-ink-soft">
+                  Perioden dækker {formatDateRange(period.from, period.to)}
+                  {spillMonths.length > 0 ? (
+                    <span className="mt-0.5 block">
+                      En runde hen over et månedsskifte opkræves samlet, så kampe i{" "}
+                      {spillMonths.map(monthLabel).join(" og ")} tælles med her.
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               <ul>
                 {rows.map((row) => (
                   <li
@@ -184,7 +208,9 @@ export default async function MemberPage({
                   >
                     <div className="min-w-0">
                       <div className="truncate text-[15px]">{row.title}</div>
-                      <div className="text-[13px] text-ink-soft">{row.meta}</div>
+                      <div className={`text-[13px] ${row.moved ? "text-debt" : "text-ink-soft"}`}>
+                        {row.meta}
+                      </div>
                     </div>
                     <Money ore={row.amountOre} showZeroDash className="shrink-0 text-[15px]" />
                   </li>
