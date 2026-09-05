@@ -68,7 +68,7 @@ export default async function OverviewPage({
 
   const settled = standings
     .filter((s) => s.balanceOre <= 0 && s.paidOre > 0)
-    .map((s) => s.name);
+    .map((s) => ({ memberId: s.memberId, name: s.name }));
 
   return (
     <div className="flex flex-col gap-7">

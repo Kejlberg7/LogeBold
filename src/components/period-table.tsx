@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { formatOre, formatOreBare } from "@/lib/money";
 import { Money } from "./ui";
@@ -79,8 +80,18 @@ export function PeriodTable({
           </thead>
           <tbody>
             {ordered.map((row) => (
-              <tr key={row.memberId} className="border-b border-rule-soft last:border-b-0">
-                <td className="px-4 py-2.5 text-[15px]">{row.name}</td>
+              <tr
+                key={row.memberId}
+                className="border-b border-rule-soft transition last:border-b-0 hover:bg-surface-2"
+              >
+                <td className="px-4 py-2.5">
+                  <Link
+                    href={`/medlem/${row.memberId}`}
+                    className="block text-[15px] underline decoration-rule underline-offset-4"
+                  >
+                    {row.name}
+                  </Link>
+                </td>
                 <td className="num hidden whitespace-nowrap px-2 py-2.5 text-right text-ink-soft sm:table-cell">
                   {formatOreBare(row.chargedOre)}
                 </td>

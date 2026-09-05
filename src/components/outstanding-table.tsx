@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { formatOre, formatOreBare } from "@/lib/money";
 import { Money } from "./ui";
@@ -29,7 +30,7 @@ export function OutstandingTable({
   heading,
 }: {
   rows: OutstandingRow[];
-  settled: string[];
+  settled: { memberId: number; name: string }[];
   heading: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -74,8 +75,18 @@ export function OutstandingTable({
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.memberId} className="border-b border-rule-soft last:border-b-0">
-                <td className="px-4 py-2.5 text-[15px]">{row.name}</td>
+              <tr
+                key={row.memberId}
+                className="border-b border-rule-soft transition last:border-b-0 hover:bg-surface-2"
+              >
+                <td className="px-4 py-2.5">
+                  <Link
+                    href={`/medlem/${row.memberId}`}
+                    className="block text-[15px] underline decoration-rule underline-offset-4"
+                  >
+                    {row.name}
+                  </Link>
+                </td>
                 <td className="num hidden whitespace-nowrap px-2 py-2.5 text-right text-ink-soft sm:table-cell">
                   {/* Alt hvad der er opkrævet: kampe, bøder og reguleringer. */}
                   {row.matchOre + row.fineOre + row.adjustmentOre === 0
@@ -108,9 +119,24 @@ export function OutstandingTable({
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-rule-soft px-4 py-3">
         <span className="text-[13px] text-ink-soft">
-          {settled.length > 0
-            ? `Betalt op: ${settled.join(", ")}`
-            : "Ingen er betalt helt op endnu."}
+          {settled.length > 0 ? (
+            <>
+              Betalt op:{" "}
+              {settled.map((member, i) => (
+                <span key={member.memberId}>
+                  {i > 0 ? ", " : ""}
+                  <Link
+                    href={`/medlem/${member.memberId}`}
+                    className="underline decoration-rule underline-offset-4 hover:text-ink"
+                  >
+                    {member.name}
+                  </Link>
+                </span>
+              ))}
+            </>
+          ) : (
+            "Ingen er betalt helt op endnu."
+          )}
         </span>
         <button
           type="button"
