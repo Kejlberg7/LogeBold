@@ -566,8 +566,21 @@ export type MemberPeriodStatus = {
   status: "betalt" | "delvist" | "mangler" | "intet";
 };
 
-/** Første og sidste kamp der opkræves i en måned. */
-export type MonthSpan = { from: Date; to: Date; matchCount: number };
+/** En kamp i en opkrævningsmåned, som den vises når man folder perioden ud. */
+export type MonthMatch = {
+  id: number;
+  matchday: number | null;
+  kickoff: Date;
+  home: string;
+  away: string;
+  homeGoals: number;
+  awayGoals: number;
+  /** Spillet i en anden kalendermåned end den den opkræves i. */
+  outsideMonth: boolean;
+};
+
+/** Første og sidste kamp der opkræves i en måned, og kampene selv. */
+export type MonthSpan = { from: Date; to: Date; matchCount: number; matches: MonthMatch[] };
 
 export type PeriodOverview = {
   monthKey: string;
@@ -589,37 +602,66 @@ export type PeriodOverview = {
  */
 async function getMonthSpans(seasonId: number): Promise<Map<string, MonthSpan>> {
   const rows = await db.execute<{
+    id: number;
+    matchday: number | null;
+    kickoff: Date;
     billing_month: string;
-    first_kickoff: Date;
-    last_kickoff: Date;
-    match_count: number;
+    kickoff_month: string;
+    home: string;
+    away: string;
+    home_goals: number;
+    away_goals: number;
   }>(sql`
     select
+      m.id, m.matchday, m.kickoff,
       coalesce(
         m.billing_month_override, m.billing_month_default,
         to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM')
       ) as billing_month,
-      min(m.kickoff) as first_kickoff,
-      max(m.kickoff) as last_kickoff,
-      count(*)::int as match_count
+      to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM') as kickoff_month,
+      h.short_name as home, a.short_name as away,
+      m.home_goals, m.away_goals
     from matches m
+    join teams h on h.id = m.home_team_id
+    join teams a on a.id = m.away_team_id
     where m.season_id = ${seasonId}
       and m.status in ('FINISHED', 'AWARDED')
       and m.home_goals is not null
       and m.away_goals is not null
-    group by 1
+    order by m.kickoff asc
   `);
 
-  return new Map(
-    rows.map((r) => [
-      r.billing_month,
-      {
-        from: new Date(r.first_kickoff),
-        to: new Date(r.last_kickoff),
-        matchCount: r.match_count,
-      },
-    ]),
-  );
+  const spans = new Map<string, MonthSpan>();
+  for (const r of rows) {
+    const kickoff = new Date(r.kickoff);
+    const match: MonthMatch = {
+      id: r.id,
+      matchday: r.matchday,
+      kickoff,
+      home: r.home,
+      away: r.away,
+      homeGoals: r.home_goals,
+      awayGoals: r.away_goals,
+      outsideMonth: r.kickoff_month !== r.billing_month,
+    };
+
+    const span = spans.get(r.billing_month);
+    if (span) {
+      // Rækkerne kommer sorteret, så den sidste vi ser er også den seneste.
+      span.to = kickoff;
+      span.matchCount += 1;
+      span.matches.push(match);
+    } else {
+      spans.set(r.billing_month, {
+        from: kickoff,
+        to: kickoff,
+        matchCount: 1,
+        matches: [match],
+      });
+    }
+  }
+
+  return spans;
 }
 
 type Allocation = {

@@ -6,7 +6,7 @@ import {
   getPotSummary,
   getStandings,
 } from "@/lib/queries";
-import { formatDateRange, monthKey, monthLabel } from "@/lib/dates";
+import { formatDate, formatDateRange, monthKey, monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
 import { Badge, Card, CardHeader, Empty, PageTitle, Stat } from "@/components/ui";
 import { OutstandingTable } from "@/components/outstanding-table";
@@ -112,16 +112,41 @@ export default async function OverviewPage({
             }
           />
           {period.span ? (
-            <div className="border-b border-rule-soft px-4 py-2.5 text-[13px] text-ink-soft">
-              Dækker {period.span.matchCount} kampe ·{" "}
-              {formatDateRange(period.span.from, period.span.to)}
-              {spillMonths.length > 0 ? (
-                <div className="mt-0.5">
-                  En runde hen over et månedsskifte opkræves samlet, så kampe i{" "}
-                  {spillMonths.map(monthLabel).join(" og ")} tælles med her.
-                </div>
-              ) : null}
-            </div>
+            <details className="border-b border-rule-soft">
+              <summary className="cursor-pointer px-4 py-2.5 text-[13px] text-ink-soft hover:text-ink">
+                Dækker {period.span.matchCount} kampe ·{" "}
+                {formatDateRange(period.span.from, period.span.to)}
+                {spillMonths.length > 0 ? (
+                  <span className="mt-0.5 block">
+                    En runde hen over et månedsskifte opkræves samlet, så kampe i{" "}
+                    {spillMonths.map(monthLabel).join(" og ")} tælles med her.
+                  </span>
+                ) : null}
+              </summary>
+              <ul className="bg-surface-2">
+                {period.span.matches.map((match) => (
+                  <li
+                    key={match.id}
+                    className="flex items-baseline justify-between gap-3 border-t border-rule-soft px-4 py-2 text-[14px]"
+                  >
+                    <span className="min-w-0 truncate">
+                      {match.home} <span className="text-ink-faint">–</span> {match.away}
+                    </span>
+                    <span className="flex shrink-0 items-baseline gap-3">
+                      <span
+                        className={`text-[13px] ${match.outsideMonth ? "text-debt" : "text-ink-soft"}`}
+                      >
+                        {formatDate(match.kickoff)}
+                        {match.matchday ? ` · runde ${match.matchday}` : ""}
+                      </span>
+                      <span className="num font-semibold">
+                        {match.homeGoals}–{match.awayGoals}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           ) : null}
           <PeriodTable
             rows={period.rows}
