@@ -566,21 +566,16 @@ export type MemberPeriodStatus = {
   status: "betalt" | "delvist" | "mangler" | "intet";
 };
 
-/** En kamp i en opkrævningsmåned, som den vises når man folder perioden ud. */
-export type MonthMatch = {
-  id: number;
-  matchday: number | null;
-  kickoff: Date;
-  home: string;
-  away: string;
-  homeGoals: number;
-  awayGoals: number;
-  /** Spillet i en anden kalendermåned end den den opkræves i. */
-  outsideMonth: boolean;
-};
-
 /** Første og sidste kamp der opkræves i en måned, og kampene selv. */
-export type MonthSpan = { from: Date; to: Date; matchCount: number; matches: MonthMatch[] };
+export type MonthSpan = {
+  from: Date;
+  to: Date;
+  matchCount: number;
+  /** Kampene med deres opkrævninger, så man kan se hvem der skylder for hvad. */
+  matches: MatchRow[];
+  /** Kampe spillet i en anden kalendermåned end den de opkræves i. */
+  movedIds: number[];
+};
 
 export type PeriodOverview = {
   monthKey: string;
@@ -601,26 +596,13 @@ export type PeriodOverview = {
  * Kun spillede kampe tælles med — det er dem der er blevet til penge.
  */
 async function getMonthSpans(seasonId: number): Promise<Map<string, MonthSpan>> {
-  const rows = await db.execute<{
-    id: number;
-    matchday: number | null;
-    kickoff: Date;
-    billing_month: string;
-    kickoff_month: string;
-    home: string;
-    away: string;
-    home_goals: number;
-    away_goals: number;
-  }>(sql`
-    select
-      m.id, m.matchday, m.kickoff,
+  const rows = await db.execute<MatchSqlRow & { billing_month: string; kickoff_month: string }>(sql`
+    select ${MATCH_COLUMNS},
       coalesce(
         m.billing_month_override, m.billing_month_default,
         to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM')
       ) as billing_month,
-      to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM') as kickoff_month,
-      h.short_name as home, a.short_name as away,
-      m.home_goals, m.away_goals
+      to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM') as kickoff_month
     from matches m
     join teams h on h.id = m.home_team_id
     join teams a on a.id = m.away_team_id
@@ -628,38 +610,31 @@ async function getMonthSpans(seasonId: number): Promise<Map<string, MonthSpan>> 
       and m.status in ('FINISHED', 'AWARDED')
       and m.home_goals is not null
       and m.away_goals is not null
-    order by m.kickoff asc
+    order by m.kickoff asc, h.short_name asc
   `);
 
+  const matchRows = await withCharges(rows);
   const spans = new Map<string, MonthSpan>();
-  for (const r of rows) {
-    const kickoff = new Date(r.kickoff);
-    const match: MonthMatch = {
-      id: r.id,
-      matchday: r.matchday,
-      kickoff,
-      home: r.home,
-      away: r.away,
-      homeGoals: r.home_goals,
-      awayGoals: r.away_goals,
-      outsideMonth: r.kickoff_month !== r.billing_month,
-    };
 
+  rows.forEach((r, i) => {
+    const match = matchRows[i];
     const span = spans.get(r.billing_month);
     if (span) {
       // Rækkerne kommer sorteret, så den sidste vi ser er også den seneste.
-      span.to = kickoff;
+      span.to = match.kickoff;
       span.matchCount += 1;
       span.matches.push(match);
     } else {
       spans.set(r.billing_month, {
-        from: kickoff,
-        to: kickoff,
+        from: match.kickoff,
+        to: match.kickoff,
         matchCount: 1,
         matches: [match],
+        movedIds: [],
       });
     }
-  }
+    if (r.kickoff_month !== r.billing_month) spans.get(r.billing_month)!.movedIds.push(r.id);
+  });
 
   return spans;
 }

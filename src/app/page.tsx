@@ -6,7 +6,7 @@ import {
   getPotSummary,
   getStandings,
 } from "@/lib/queries";
-import { formatDate, formatDateRange, monthKey, monthLabel } from "@/lib/dates";
+import { formatDateRange, monthKey, monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
 import { Badge, Card, CardHeader, Empty, PageTitle, Stat } from "@/components/ui";
 import { OutstandingTable } from "@/components/outstanding-table";
@@ -123,29 +123,12 @@ export default async function OverviewPage({
                   </span>
                 ) : null}
               </summary>
-              <ul className="bg-surface-2">
-                {period.span.matches.map((match) => (
-                  <li
-                    key={match.id}
-                    className="flex items-baseline justify-between gap-3 border-t border-rule-soft px-4 py-2 text-[14px]"
-                  >
-                    <span className="min-w-0 truncate">
-                      {match.home} <span className="text-ink-faint">–</span> {match.away}
-                    </span>
-                    <span className="flex shrink-0 items-baseline gap-3">
-                      <span
-                        className={`text-[13px] ${match.outsideMonth ? "text-debt" : "text-ink-soft"}`}
-                      >
-                        {formatDate(match.kickoff)}
-                        {match.matchday ? ` · runde ${match.matchday}` : ""}
-                      </span>
-                      <span className="num font-semibold">
-                        {match.homeGoals}–{match.awayGoals}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="border-t border-rule-soft bg-surface-2">
+                <MatchList
+                  matches={period.span.matches}
+                  movedIds={new Set(period.span.movedIds)}
+                />
+              </div>
             </details>
           ) : null}
           <PeriodTable

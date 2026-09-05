@@ -27,7 +27,14 @@ function TeamName({
   );
 }
 
-export function MatchList({ matches }: { matches: MatchRow[] }) {
+export function MatchList({
+  matches,
+  movedIds,
+}: {
+  matches: MatchRow[];
+  /** Kampe der opkræves i en anden måned end den de blev spillet i. */
+  movedIds?: Set<number>;
+}) {
   return (
     <ul>
       {matches.map((match) => {
@@ -53,7 +60,11 @@ export function MatchList({ matches }: { matches: MatchRow[] }) {
               )}
             </div>
 
-            <div className="mt-0.5 text-[13px] text-ink-soft">
+            <div
+              className={`mt-0.5 text-[13px] ${
+                movedIds?.has(match.id) ? "text-debt" : "text-ink-soft"
+              }`}
+            >
               {formatDateTime(match.kickoff)}
               {match.matchday ? ` · runde ${match.matchday}` : ""}
             </div>
