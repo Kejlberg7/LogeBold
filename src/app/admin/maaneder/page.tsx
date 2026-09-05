@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getActiveSeason } from "@/lib/sync";
-import { getMonthlySummary, getSyncRuns } from "@/lib/queries";
+import { getLockSuggestions, getMonthlySummary, getSyncRuns } from "@/lib/queries";
 import { formatDateTime, monthLabel } from "@/lib/dates";
 import { Badge, Card, CardHeader, Empty, Money, PageTitle } from "@/components/ui";
 import { SyncButtons } from "@/components/admin-forms";
@@ -19,10 +19,13 @@ export default async function MonthsPage() {
     );
   }
 
-  const [months, runs] = await Promise.all([
+  const [months, runs, lockable] = await Promise.all([
     getMonthlySummary(season.id),
     getSyncRuns(),
+    getLockSuggestions(season.id),
   ]);
+  // Måneder hvor alle har betalt — det er gratis at lukke dem nu.
+  const settled = new Set(lockable.map((m) => m.monthKey));
 
   return (
     <div className="flex flex-col gap-6">
@@ -64,6 +67,11 @@ export default async function MonthsPage() {
                     Opkrævet <Money ore={month.chargedOre} colored={false} className="text-[13px]" /> ·
                     indbetalt <Money ore={month.paidOre} colored={false} className="text-[13px]" />
                   </div>
+                  {settled.has(month.monthKey) ? (
+                    <div className="text-[13px] text-credit">
+                      Alle har betalt — måneden kan lukkes.
+                    </div>
+                  ) : null}
                 </div>
                 {month.locked ? (
                   <form action={unlockMonthAction}>

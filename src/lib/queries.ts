@@ -575,17 +575,21 @@ export type PeriodOverview = {
   outstandingOre: number;
 };
 
+type Allocation = {
+  months: string[];
+  members: { id: number; name: string }[];
+  /** måned → medlem → hvad der er opkrævet og dækket. */
+  perMonth: Map<string, Map<number, { chargedOre: number; coveredOre: number }>>;
+};
+
 /**
- * Opgørelse for én måned: hvem har betalt, og hvem mangler.
+ * Fordeler hvert medlems indbetalinger ud over månederne, ældste først.
  *
- * Indbetalinger er ikke mærket med hvilken måned de dækker, så de fordeles
- * ældste måned først. Betaler nogen for lidt i oktober, æder november-beløbet
- * altså ikke hullet fra oktober — hullet bliver stående, hvor det opstod.
+ * Indbetalinger er ikke mærket med hvilken måned de dækker. Betaler nogen for
+ * lidt i oktober, æder november-beløbet altså ikke hullet fra oktober — hullet
+ * bliver stående, hvor det opstod.
  */
-export async function getPeriodOverview(
-  seasonId: number,
-  wantedMonth?: string,
-): Promise<PeriodOverview | null> {
+async function allocatePayments(seasonId: number): Promise<Allocation> {
   const [memberRows, totals] = await Promise.all([
     db
       .select({ id: members.id, name: members.name })
@@ -596,28 +600,38 @@ export async function getPeriodOverview(
   ]);
 
   const months = [...totals.keys()].sort();
-  if (months.length === 0) return null;
+  const perMonth = new Map<string, Map<number, { chargedOre: number; coveredOre: number }>>();
+  for (const key of months) perMonth.set(key, new Map());
 
-  const monthKey = wantedMonth && months.includes(wantedMonth) ? wantedMonth : lastClosedMonth(months);
-
-  const rows: MemberPeriodStatus[] = memberRows.map((member) => {
-    // Fordel medlemmets samlede indbetalinger ud over månederne, ældste først.
+  for (const member of memberRows) {
     let pool = 0;
     for (const key of months) pool += totals.get(key)?.get(member.id)?.paidOre ?? 0;
 
-    let chargedOre = 0;
-    let coveredOre = 0;
     for (const key of months) {
-      const charged = Math.max(0, totals.get(key)?.get(member.id)?.chargedOre ?? 0);
-      const covered = Math.min(pool, charged);
-      pool -= covered;
-      if (key === monthKey) {
-        chargedOre = charged;
-        coveredOre = covered;
-        break;
-      }
+      const chargedOre = Math.max(0, totals.get(key)?.get(member.id)?.chargedOre ?? 0);
+      const coveredOre = Math.min(pool, chargedOre);
+      pool -= coveredOre;
+      perMonth.get(key)!.set(member.id, { chargedOre, coveredOre });
     }
+  }
 
+  return { months, members: memberRows, perMonth };
+}
+
+/** Opgørelse for én måned: hvem har betalt, og hvem mangler. */
+export async function getPeriodOverview(
+  seasonId: number,
+  wantedMonth?: string,
+): Promise<PeriodOverview | null> {
+  const { months, members: memberRows, perMonth } = await allocatePayments(seasonId);
+  if (months.length === 0) return null;
+
+  const monthKey =
+    wantedMonth && months.includes(wantedMonth) ? wantedMonth : lastClosedMonth(months);
+  const month = perMonth.get(monthKey)!;
+
+  const rows: MemberPeriodStatus[] = memberRows.map((member) => {
+    const { chargedOre, coveredOre } = month.get(member.id) ?? { chargedOre: 0, coveredOre: 0 };
     const outstandingOre = chargedOre - coveredOre;
     return {
       memberId: member.id,
@@ -644,6 +658,46 @@ export async function getPeriodOverview(
     coveredOre: rows.reduce((sum, r) => sum + r.coveredOre, 0),
     outstandingOre: rows.reduce((sum, r) => sum + r.outstandingOre, 0),
   };
+}
+
+export type LockSuggestion = { monthKey: string; chargedOre: number; memberCount: number };
+
+/**
+ * Måneder hvor alle har betalt, men som ikke er låst endnu.
+ *
+ * Så længe en måned står åben, kan en ændring af satser, hold eller et rettet
+ * resultat regne den om — også efter folk har betalt. Er måneden gjort op, er
+ * det gratis at lukke den, og så kan den ikke skride bagud.
+ *
+ * Indeværende måned tælles ikke med: den er sjældent færdig, og at lukke den
+ * ville spærre for helt almindelige registreringer.
+ */
+export async function getLockSuggestions(seasonId: number): Promise<LockSuggestion[]> {
+  const [{ months, perMonth }, locked] = await Promise.all([
+    allocatePayments(seasonId),
+    getLockedMonths(seasonId),
+  ]);
+
+  const now = currentMonthKey();
+  const out: LockSuggestion[] = [];
+
+  for (const monthKey of months) {
+    if (monthKey >= now || locked.has(monthKey)) continue;
+
+    let chargedOre = 0;
+    let outstandingOre = 0;
+    let memberCount = 0;
+    for (const { chargedOre: charged, coveredOre } of perMonth.get(monthKey)!.values()) {
+      if (charged === 0) continue;
+      memberCount += 1;
+      chargedOre += charged;
+      outstandingOre += charged - coveredOre;
+    }
+
+    if (chargedOre > 0 && outstandingOre === 0) out.push({ monthKey, chargedOre, memberCount });
+  }
+
+  return out;
 }
 
 /** Den nyeste måned der ikke er indeværende — det er den, man er ved at kræve ind. */

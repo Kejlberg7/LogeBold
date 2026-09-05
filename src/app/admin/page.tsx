@@ -4,13 +4,14 @@ import { getActiveSeason } from "@/lib/sync";
 import {
   getActiveMemberOptions,
   getFineTypes,
+  getLockSuggestions,
   getPotSummary,
   getRecentManualEntries,
 } from "@/lib/queries";
-import { formatDate, toDateInputValue } from "@/lib/dates";
+import { formatDate, monthLabel, toDateInputValue } from "@/lib/dates";
 import { Card, CardHeader, Empty, Money, PageTitle, Stat } from "@/components/ui";
 import { AdjustmentForm, FineForm, PaymentForm } from "@/components/admin-forms";
-import { reverseEntryAction } from "./actions";
+import { lockMonthAction, reverseEntryAction } from "./actions";
 
 const TYPE_LABELS = {
   match: "Kamp",
@@ -38,11 +39,12 @@ export default async function AdminPage() {
     );
   }
 
-  const [pot, memberOptions, fines, recent] = await Promise.all([
+  const [pot, memberOptions, fines, recent, lockable] = await Promise.all([
     getPotSummary(season.id),
     getActiveMemberOptions(),
     getFineTypes(season.id),
     getRecentManualEntries(season.id),
+    getLockSuggestions(season.id),
   ]);
 
   const today = toDateInputValue(new Date());
@@ -66,6 +68,42 @@ export default async function AdminPage() {
           Runder og måneder
         </Link>
       </nav>
+
+      {lockable.length > 0 ? (
+        <Card>
+          <CardHeader title="Klar til at lukke" />
+          <p className="border-b border-rule-soft px-4 py-3 text-[14px] text-ink-soft">
+            Alle har betalt. Låser du måneden, kan hverken nye satser, et holdskifte
+            eller et rettet resultat regne den om bagefter. Du kan altid åbne den igen.
+          </p>
+          <ul>
+            {lockable.map((month) => (
+              <li
+                key={month.monthKey}
+                className="flex flex-wrap items-center justify-between gap-3 border-b border-rule-soft px-4 py-3 last:border-b-0"
+              >
+                <div>
+                  <div className="text-[15px]">{monthLabel(month.monthKey)}</div>
+                  <div className="text-[13px] text-ink-soft">
+                    {month.memberCount} medlemmer ·{" "}
+                    <Money ore={month.chargedOre} colored={false} className="text-[13px]" />{" "}
+                    opkrævet og betalt
+                  </div>
+                </div>
+                <form action={lockMonthAction}>
+                  <input type="hidden" name="monthKey" value={month.monthKey} />
+                  <button
+                    type="submit"
+                    className="rounded-md border border-rule px-3 py-1.5 text-[14px] text-ink-soft transition hover:text-ink"
+                  >
+                    Luk måneden
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3">
         <Stat label="I kassen" ore={pot.potOre} tone="credit" />
