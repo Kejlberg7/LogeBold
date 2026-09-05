@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   assignments,
@@ -653,14 +653,49 @@ type Allocation = {
  * lidt i oktober, æder november-beløbet altså ikke hullet fra oktober — hullet
  * bliver stående, hvor det opstod.
  */
+/**
+ * Indbetalinger der er mærket med den periode de dækker: måned → medlem → øre.
+ *
+ * Betaler man for august den 3. september, er datoen september, men pengene
+ * hører til august. Er feltet tomt, er indbetalingen ikke mærket, og så
+ * fordeles den ældste gæld først som før.
+ */
+async function getEarmarkedPayments(seasonId: number): Promise<Map<string, Map<number, number>>> {
+  const rows = await db
+    .select({
+      monthKey: ledgerEntries.billingMonth,
+      memberId: ledgerEntries.memberId,
+      total: sql<number>`coalesce(sum(${ledgerEntries.amountOre}), 0)::int`,
+    })
+    .from(ledgerEntries)
+    .where(
+      and(
+        eq(ledgerEntries.seasonId, seasonId),
+        eq(ledgerEntries.type, "payment"),
+        isNotNull(ledgerEntries.billingMonth),
+      ),
+    )
+    .groupBy(ledgerEntries.billingMonth, ledgerEntries.memberId);
+
+  const byMonth = new Map<string, Map<number, number>>();
+  for (const row of rows) {
+    if (row.monthKey === null) continue;
+    const month = byMonth.get(row.monthKey) ?? new Map<number, number>();
+    month.set(row.memberId, (month.get(row.memberId) ?? 0) + -row.total);
+    byMonth.set(row.monthKey, month);
+  }
+  return byMonth;
+}
+
 async function allocatePayments(seasonId: number): Promise<Allocation> {
-  const [memberRows, totals] = await Promise.all([
+  const [memberRows, totals, earmarked] = await Promise.all([
     db
       .select({ id: members.id, name: members.name })
       .from(members)
       .where(eq(members.isActive, true))
       .orderBy(asc(members.name)),
     getMonthlyMemberTotals(seasonId),
+    getEarmarkedPayments(seasonId),
   ]);
 
   const months = [...totals.keys()].sort();
@@ -668,14 +703,26 @@ async function allocatePayments(seasonId: number): Promise<Allocation> {
   for (const key of months) perMonth.set(key, new Map());
 
   for (const member of memberRows) {
+    // Puljen er de penge der ikke er mærket med en periode.
     let pool = 0;
-    for (const key of months) pool += totals.get(key)?.get(member.id)?.paidOre ?? 0;
+    for (const key of months) {
+      const paid = totals.get(key)?.get(member.id)?.paidOre ?? 0;
+      pool += paid - (earmarked.get(key)?.get(member.id) ?? 0);
+    }
 
     for (const key of months) {
       const chargedOre = Math.max(0, totals.get(key)?.get(member.id)?.chargedOre ?? 0);
-      const coveredOre = Math.min(pool, chargedOre);
-      pool -= coveredOre;
-      perMonth.get(key)!.set(member.id, { chargedOre, coveredOre });
+
+      // Er pengene mærket med perioden, dækker de den periode først.
+      const mark = earmarked.get(key)?.get(member.id) ?? 0;
+      const fromMark = Math.min(mark, chargedOre);
+      // Betalte man for meget til perioden, går resten videre til de næste.
+      pool += mark - fromMark;
+
+      const fromPool = Math.min(pool, chargedOre - fromMark);
+      pool -= fromPool;
+
+      perMonth.get(key)!.set(member.id, { chargedOre, coveredOre: fromMark + fromPool });
     }
   }
 

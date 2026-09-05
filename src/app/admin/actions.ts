@@ -59,13 +59,24 @@ export async function registerPaymentAction(
   const date = readDate(formData);
   const method = String(formData.get("method") ?? "").trim() || null;
   const note = String(formData.get("note") ?? "").trim() || null;
+  // Perioden pengene dækker. Tom betyder umærket — så går de til den ældste gæld.
+  const period = String(formData.get("period") ?? "").trim();
 
   if (!Number.isInteger(memberId)) return { error: "Vælg et medlem." };
   if (amountOre === null || amountOre <= 0) return { error: "Skriv et beløb større end 0." };
   if (!date) return { error: "Ugyldig dato." };
+  if (period !== "" && !/^\d{4}-\d{2}$/.test(period)) return { error: "Ugyldig periode." };
 
   const locked = await assertMonthOpen(season.id, date);
   if (locked) return { error: locked };
+
+  // Perioden kan være en anden end datoens, så den skal tjekkes for sig.
+  if (period !== "" && period !== monthKey(date)) {
+    const lockedPeriod = await getLockedMonths(season.id);
+    if (lockedPeriod.has(period)) {
+      return { error: `Perioden ${period} er lukket. Åbn den først, hvis du skal rette i den.` };
+    }
+  }
 
   await db.insert(ledgerEntries).values({
     seasonId: season.id,
@@ -73,6 +84,7 @@ export async function registerPaymentAction(
     type: "payment",
     amountOre: -amountOre,
     occurredAt: date,
+    billingMonth: period === "" ? null : period,
     description: "Indbetaling",
     paymentMethod: method,
     note,

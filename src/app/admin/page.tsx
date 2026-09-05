@@ -5,6 +5,7 @@ import {
   getActiveMemberOptions,
   getFineTypes,
   getLockSuggestions,
+  getMonthlySummary,
   getPotSummary,
   getRecentManualEntries,
 } from "@/lib/queries";
@@ -39,15 +40,23 @@ export default async function AdminPage() {
     );
   }
 
-  const [pot, memberOptions, fines, recent, lockable] = await Promise.all([
+  const [pot, memberOptions, fines, recent, lockable, monthly] = await Promise.all([
     getPotSummary(season.id),
     getActiveMemberOptions(),
     getFineTypes(season.id),
     getRecentManualEntries(season.id),
     getLockSuggestions(season.id),
+    getMonthlySummary(season.id),
   ]);
 
   const today = toDateInputValue(new Date());
+
+  // Perioder man kan betale for. Den man er ved at kræve ind er den seneste
+  // afsluttede — det er den langt de fleste indbetalinger handler om.
+  const periods = monthly.filter((m) => !m.locked).map((m) => m.monthKey);
+  const now = toDateInputValue(new Date()).slice(0, 7);
+  const closed = periods.filter((m) => m < now);
+  const defaultPeriod = closed.length > 0 ? closed[closed.length - 1] : null;
 
 
   return (
@@ -112,7 +121,12 @@ export default async function AdminPage() {
 
       <Card>
         <CardHeader title="Registrér indbetaling" />
-        <PaymentForm members={memberOptions} today={today} />
+        <PaymentForm
+          members={memberOptions}
+          today={today}
+          periods={periods}
+          defaultPeriod={defaultPeriod}
+        />
       </Card>
 
       <Card>

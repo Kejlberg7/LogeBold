@@ -16,6 +16,7 @@ import {
   updateSeasonAction,
   type ActionState,
 } from "@/app/admin/actions";
+import { monthLabel } from "@/lib/dates";
 import { Button, Field, inputClass } from "./ui";
 
 const initial: ActionState = {};
@@ -43,7 +44,18 @@ function MemberSelect({ members, name = "memberId" }: { members: MemberOption[];
   );
 }
 
-export function PaymentForm({ members, today }: { members: MemberOption[]; today: string }) {
+export function PaymentForm({
+  members,
+  today,
+  periods,
+  defaultPeriod,
+}: {
+  members: MemberOption[];
+  today: string;
+  /** Perioderne der kan betales for, ældst først. */
+  periods: string[];
+  defaultPeriod: string | null;
+}) {
   const [state, action, pending] = useActionState(registerPaymentAction, initial);
 
   return (
@@ -67,6 +79,16 @@ export function PaymentForm({ members, today }: { members: MemberOption[]; today
           </select>
         </Field>
       </div>
+      <Field label="Betaling for">
+        <select name="period" className={inputClass} defaultValue={defaultPeriod ?? ""}>
+          <option value="">Ældste gæld først</option>
+          {[...periods].reverse().map((period) => (
+            <option key={period} value={period}>
+              {monthLabel(period)}
+            </option>
+          ))}
+        </select>
+      </Field>
       <Field label="Note (valgfri)">
         <input name="note" className={inputClass} placeholder="F.eks. betalt for september" />
       </Field>
