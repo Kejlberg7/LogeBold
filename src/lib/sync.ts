@@ -150,6 +150,85 @@ async function upsertMatches(
   return count;
 }
 
+/** En kamp mere end en uge fra rundens tyngdepunkt regnes som flyttet. */
+const ROUND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+type BillingInput = { id: number; matchday: number | null; kickoff: Date };
+
+/**
+ * Regner ud hvilken måned hver kamp som udgangspunkt opkræves i.
+ *
+ * En runde samler sig om en weekend. Krydser den et månedsskifte, hører hele
+ * runden til den måned den begynder i — ellers ville en lørdag og en søndag
+ * havne på hver sin opkrævning.
+ *
+ * Udsatte kampe er undtagelsen. De spilles ofte måneder senere, og skal ikke
+ * tilbage i en måned der for længst er gjort op — så en kamp der ligger mere
+ * end en uge fra rundens tyngdepunkt opkræves i den måned den faktisk spilles.
+ * Tyngdepunktet er medianen, ikke den første kamp, så én fremrykket kamp ikke
+ * kan trække hele runden med sig.
+ */
+export function computeBillingDefaults(rows: BillingInput[]): Map<number, string> {
+  const byRound = new Map<number | null, BillingInput[]>();
+  for (const row of rows) {
+    const list = byRound.get(row.matchday) ?? [];
+    list.push(row);
+    byRound.set(row.matchday, list);
+  }
+
+  const out = new Map<number, string>();
+  for (const group of byRound.values()) {
+    const sorted = [...group].sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
+    const anchor = sorted[Math.floor((sorted.length - 1) / 2)].kickoff.getTime();
+    const core = sorted.filter((m) => Math.abs(m.kickoff.getTime() - anchor) <= ROUND_WINDOW_MS);
+    const roundMonth = monthKey((core[0] ?? sorted[0]).kickoff);
+
+    for (const match of sorted) {
+      const inCore = Math.abs(match.kickoff.getTime() - anchor) <= ROUND_WINDOW_MS;
+      out.set(match.id, inCore ? roundMonth : monthKey(match.kickoff));
+    }
+  }
+  return out;
+}
+
+/**
+ * Skriver standardmåneden på alle sæsonens kampe. Kaldes ved hver synkronisering,
+ * så en kamp der bliver udsat også flytter sin opkrævning med sig.
+ */
+export async function refreshBillingMonths(seasonId: number): Promise<number> {
+  const rows = await db
+    .select({
+      id: matches.id,
+      matchday: matches.matchday,
+      kickoff: matches.kickoff,
+      current: matches.billingMonthDefault,
+    })
+    .from(matches)
+    .where(eq(matches.seasonId, seasonId));
+
+  const wanted = computeBillingDefaults(rows);
+  let changed = 0;
+  for (const row of rows) {
+    const next = wanted.get(row.id);
+    if (!next || next === row.current) continue;
+    await db
+      .update(matches)
+      .set({ billingMonthDefault: next })
+      .where(eq(matches.id, row.id));
+    changed += 1;
+  }
+  return changed;
+}
+
+/** Måneden en kamp opkræves i: admins valg, ellers standarden. */
+export function billingMonthFor(match: {
+  kickoff: Date;
+  billingMonthDefault: string | null;
+  billingMonthOverride: string | null;
+}): string {
+  return match.billingMonthOverride ?? match.billingMonthDefault ?? monthKey(match.kickoff);
+}
+
 export type RecalcResult = { created: number; updated: number; removed: number; skippedLocked: number };
 
 /**
@@ -161,7 +240,10 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
   const [season] = await db.select().from(seasons).where(eq(seasons.id, seasonId)).limit(1);
   if (!season) throw new Error("Sæsonen findes ikke.");
 
-  const [assignmentRows, playedMatches, teamRows, existingRows, lockRows] = await Promise.all([
+  await refreshBillingMonths(seasonId);
+
+  const [assignmentRows, playedMatches, teamRows, existingRows, lockRows] =
+    await Promise.all([
     db
       .select({ teamId: assignments.teamId, memberId: assignments.memberId })
       .from(assignments)
@@ -196,6 +278,7 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
     memberId: number;
     amountOre: number;
     occurredAt: Date;
+    billingMonth: string;
     description: string;
   };
 
@@ -235,6 +318,7 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
           memberId,
           amountOre,
           occurredAt: match.kickoff,
+          billingMonth: billingMonthFor(match),
           description: `${label}: ${scoreline}`,
         });
       }
@@ -246,9 +330,13 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
   );
   const result: RecalcResult = { created: 0, updated: 0, removed: 0, skippedLocked: 0 };
 
+  /** Den måned en eksisterende postering står i i dag. */
+  const monthOf = (entry: { billingMonth: string | null; occurredAt: Date }) =>
+    entry.billingMonth ?? monthKey(entry.occurredAt);
+
   for (const [key, want] of desired) {
     const current = existingByKey.get(key);
-    const locked = lockedMonths.has(monthKey(want.occurredAt));
+    const locked = lockedMonths.has(want.billingMonth);
 
     if (!current) {
       if (locked) {
@@ -263,6 +351,7 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
           type: "match",
           amountOre: want.amountOre,
           occurredAt: want.occurredAt,
+          billingMonth: want.billingMonth,
           description: want.description,
           matchId: want.matchId,
           teamId: want.teamId,
@@ -275,11 +364,12 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
     const unchanged =
       current.amountOre === want.amountOre &&
       current.description === want.description &&
-      current.occurredAt.getTime() === want.occurredAt.getTime();
+      current.occurredAt.getTime() === want.occurredAt.getTime() &&
+      current.billingMonth === want.billingMonth;
 
     if (unchanged) continue;
 
-    if (locked || lockedMonths.has(monthKey(current.occurredAt))) {
+    if (locked || lockedMonths.has(monthOf(current))) {
       result.skippedLocked += 1;
       continue;
     }
@@ -290,6 +380,7 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
         amountOre: want.amountOre,
         description: want.description,
         occurredAt: want.occurredAt,
+        billingMonth: want.billingMonth,
       })
       .where(eq(ledgerEntries.id, current.id));
     result.updated += 1;
@@ -299,7 +390,7 @@ export async function recalcCharges(seasonId: number): Promise<RecalcResult> {
   const staleIds: number[] = [];
   for (const [key, entry] of existingByKey) {
     if (desired.has(key)) continue;
-    if (lockedMonths.has(monthKey(entry.occurredAt))) {
+    if (lockedMonths.has(monthOf(entry))) {
       result.skippedLocked += 1;
       continue;
     }

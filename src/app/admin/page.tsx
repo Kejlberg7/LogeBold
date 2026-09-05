@@ -62,6 +62,9 @@ export default async function AdminPage() {
         <Link href="/admin/maaneder" className="rounded-md border border-rule px-3 py-1.5 text-ink-soft hover:text-ink">
           Måneder og synk
         </Link>
+        <Link href="/admin/runder" className="rounded-md border border-rule px-3 py-1.5 text-ink-soft hover:text-ink">
+          Runder og måneder
+        </Link>
       </nav>
 
       <div className="grid grid-cols-2 gap-3">

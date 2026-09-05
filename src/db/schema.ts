@@ -85,6 +85,14 @@ export const matches = pgTable(
       .references(() => teams.id),
     homeGoals: integer("home_goals"),
     awayGoals: integer("away_goals"),
+    /**
+     * Måneden kampen som udgangspunkt opkræves i, "YYYY-MM". Regnes ud af
+     * computeBillingDefaults i sync.ts og skrives ved hver synkronisering,
+     * så udsatte kampe flytter med.
+     */
+    billingMonthDefault: text("billing_month_default"),
+    /** Admins manuelle valg. Vinder altid over standarden ovenfor. */
+    billingMonthOverride: text("billing_month_override"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   },
   (t) => [index("matches_season_matchday_idx").on(t.seasonId, t.matchday)],
@@ -111,6 +119,11 @@ export const ledgerEntries = pgTable(
     amountOre: integer("amount_ore").notNull(),
     /** Bruges til at placere posteringen i den rigtige måned (dansk tid). */
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    /**
+     * Måneden posteringen opkræves i, "YYYY-MM". Er den tom, falder vi tilbage
+     * til occurredAt — sådan læses gamle posteringer fra før feltet fandtes.
+     */
+    billingMonth: text("billing_month"),
     description: text("description").notNull(),
     matchId: integer("match_id").references(() => matches.id, { onDelete: "cascade" }),
     teamId: integer("team_id").references(() => teams.id, { onDelete: "set null" }),
@@ -130,6 +143,7 @@ export const ledgerEntries = pgTable(
       .on(t.matchId, t.teamId, t.memberId)
       .where(sql`${t.type} = 'match'`),
     index("ledger_season_member_idx").on(t.seasonId, t.memberId),
+    index("ledger_billing_month_idx").on(t.seasonId, t.billingMonth),
     index("ledger_occurred_idx").on(t.occurredAt),
   ],
 );

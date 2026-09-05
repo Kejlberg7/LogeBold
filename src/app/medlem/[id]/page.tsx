@@ -30,6 +30,8 @@ const OUTCOME_LABELS = {
 type Item = {
   key: string;
   occurredAt: Date;
+  /** Måneden posteringen opkræves i — ikke nødvendigvis den måned datoen ligger i. */
+  month: string;
   title: string;
   meta: string;
   amountOre: number;
@@ -65,6 +67,7 @@ export default async function MemberPage({
   const items: Item[] = matchRows.map((m) => ({
     key: `m${m.matchId}:${m.teamId}`,
     occurredAt: m.kickoff,
+    month: m.billingMonth,
     title: `${OUTCOME_LABELS[m.outcome]}: ${m.scoreline}`,
     meta: `${formatDate(m.kickoff)} · ${m.teamShortName}${m.matchday ? ` · runde ${m.matchday}` : ""}`,
     amountOre: m.amountOre,
@@ -81,6 +84,7 @@ export default async function MemberPage({
     items.push({
       key: `e${entry.id}`,
       occurredAt: entry.occurredAt,
+      month: entry.billingMonth ?? monthKey(entry.occurredAt),
       title: entry.description,
       meta: `${formatDate(entry.occurredAt)} · ${TYPE_LABELS[entry.type]}${
         entry.paymentMethod ? ` · ${entry.paymentMethod}` : ""
@@ -93,7 +97,7 @@ export default async function MemberPage({
 
   const byMonth = new Map<string, Item[]>();
   for (const item of items) {
-    const key = monthKey(item.occurredAt);
+    const key = item.month;
     const list = byMonth.get(key) ?? [];
     list.push(item);
     byMonth.set(key, list);

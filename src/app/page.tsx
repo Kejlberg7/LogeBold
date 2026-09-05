@@ -2,17 +2,23 @@ import Link from "next/link";
 import { getActiveSeason } from "@/lib/sync";
 import {
   getLatestPlayedMatches,
-  getMonthlySummary,
+  getPeriodOverview,
   getPotSummary,
   getStandings,
 } from "@/lib/queries";
-import { currentMonthKey, monthLabel } from "@/lib/dates";
+import { monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
-import { Badge, Card, CardHeader, Empty, Money, PageTitle, Stat } from "@/components/ui";
+import { Badge, Card, CardHeader, Empty, PageTitle, Stat } from "@/components/ui";
 import { OutstandingTable } from "@/components/outstanding-table";
+import { PeriodTable } from "@/components/period-table";
 import { MatchList } from "@/components/match-list";
 
-export default async function OverviewPage() {
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ maaned?: string }>;
+}) {
+  const { maaned } = await searchParams;
   const season = await getActiveSeason();
 
   if (!season) {
@@ -26,13 +32,19 @@ export default async function OverviewPage() {
     );
   }
 
-  const [pot, standings, monthly, latestMatches] = await Promise.all([
+  const [pot, standings, period, latestMatches] = await Promise.all([
     getPotSummary(season.id),
     getStandings(season.id),
-    getMonthlySummary(season.id),
+    getPeriodOverview(season.id, maaned),
     getLatestPlayedMatches(season.id, 5),
   ]);
-  const thisMonth = monthly.find((m) => m.monthKey === currentMonthKey());
+
+  const monthIndex = period ? period.months.indexOf(period.monthKey) : -1;
+  const prevMonth = period && monthIndex > 0 ? period.months[monthIndex - 1] : null;
+  const nextMonth =
+    period && monthIndex >= 0 && monthIndex < period.months.length - 1
+      ? period.months[monthIndex + 1]
+      : null;
   const owing = standings
     .filter((s) => s.balanceOre > 0)
     .sort((a, b) => b.balanceOre - a.balanceOre)
@@ -72,18 +84,29 @@ export default async function OverviewPage() {
         />
       </div>
 
-      {thisMonth ? (
+      {period ? (
         <Card>
-          <CardHeader title={`Denne måned · ${monthLabel(thisMonth.monthKey)}`} />
-          <div className="flex items-center justify-between px-4 py-3 text-[15px]">
-            <span className="text-ink-soft">Opkrævet</span>
-            <Money ore={thisMonth.chargedOre} />
-          </div>
-          <div className="flex items-center justify-between border-t border-rule-soft px-4 py-3 text-[15px]">
-            <span className="text-ink-soft">Indbetalt</span>
-            {/* Vist som et positivt beløb — "Indbetalt −175 kr" læser forkert. */}
-            <Money ore={thisMonth.paidOre} colored={false} className="text-credit" />
-          </div>
+          <CardHeader
+            title={`Måneden ${monthLabel(period.monthKey)}`}
+            action={
+              <span className="flex items-center gap-3 text-[14px]">
+                {prevMonth ? (
+                  <Link href={`/?maaned=${prevMonth}`} className="text-ink-soft underline">
+                    ← {monthLabel(prevMonth)}
+                  </Link>
+                ) : null}
+                {nextMonth ? (
+                  <Link href={`/?maaned=${nextMonth}`} className="text-ink-soft underline">
+                    {monthLabel(nextMonth)} →
+                  </Link>
+                ) : null}
+              </span>
+            }
+          />
+          <PeriodTable
+            rows={period.rows}
+            heading={`Logen ${season.name} — ${monthLabel(period.monthKey)}`}
+          />
         </Card>
       ) : null}
 

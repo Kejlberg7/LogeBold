@@ -1,12 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   assignments,
   fineTypes,
   ledgerEntries,
+  matches,
   members,
   monthLocks,
   payouts,
@@ -16,6 +17,7 @@ import { requireAdmin } from "@/lib/auth";
 import { parseKrToOre } from "@/lib/money";
 import { fromDateInputValue, monthKey } from "@/lib/dates";
 import { getActiveSeason, recalcCharges, runSync } from "@/lib/sync";
+import { getLockedMonths, getMatchBilling } from "@/lib/queries";
 
 export type ActionState = { error?: string; ok?: string };
 
@@ -500,5 +502,76 @@ export async function recalcAction(
     ok: `${result.created} oprettet, ${result.updated} rettet, ${result.removed} fjernet${
       result.skippedLocked > 0 ? `, ${result.skippedLocked} sprunget over (lukket måned)` : ""
     }.`,
+  };
+}
+
+/* --------------------------------------------------- kampenes opkrævningsmåned */
+
+/**
+ * Flytter en kamp eller en hel runde til en anden opkrævningsmåned.
+ *
+ * Kampposteringerne følger med, så månedsopgørelsen og medlemssiden viser det
+ * samme. Er enten den måned kampen står i nu, eller den den skal flyttes til,
+ * lukket, sker der ingenting — så et lukket regnskab ikke ændrer sig bagud.
+ */
+export async function setBillingMonthAction(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  await requireAdmin();
+  const season = await getActiveSeason();
+  if (!season) return { error: "Ingen aktiv sæson." };
+
+  const scope = String(formData.get("scope") ?? "match");
+  const target = String(formData.get("month") ?? "").trim();
+  if (target !== "" && !/^\d{4}-\d{2}$/.test(target)) return { error: "Ugyldig måned." };
+
+  const rows = await getMatchBilling(season.id);
+
+  let affected: typeof rows;
+  if (scope === "round") {
+    const matchday = Number(formData.get("matchday"));
+    if (!Number.isInteger(matchday)) return { error: "Ugyldig runde." };
+    affected = rows.filter((r) => r.matchday === matchday);
+  } else {
+    const matchId = Number(formData.get("matchId"));
+    if (!Number.isInteger(matchId)) return { error: "Ugyldig kamp." };
+    affected = rows.filter((r) => r.id === matchId);
+  }
+  if (affected.length === 0) return { error: "Fandt ingen kampe at flytte." };
+
+  const locked = await getLockedMonths(season.id);
+  const blocked = new Set<string>();
+  for (const row of affected) {
+    if (locked.has(row.billingMonth)) blocked.add(row.billingMonth);
+  }
+  if (target !== "" && locked.has(target)) blocked.add(target);
+  if (blocked.size > 0) {
+    return {
+      error: `Måneden ${[...blocked].join(" og ")} er lukket. Åbn den først, hvis du skal flytte kampe ind eller ud af den.`,
+    };
+  }
+
+  const ids = affected.map((r) => r.id);
+  await db
+    .update(matches)
+    .set({ billingMonthOverride: target === "" ? null : target })
+    .where(inArray(matches.id, ids));
+
+  // Posteringerne skal stå i samme måned som kampen. Uden override falder de
+  // tilbage til rundens måned, som recalcCharges regner ud.
+  if (target === "") {
+    await recalcCharges(season.id);
+  } else {
+    await db
+      .update(ledgerEntries)
+      .set({ billingMonth: target })
+      .where(and(eq(ledgerEntries.type, "match"), inArray(ledgerEntries.matchId, ids)));
+  }
+
+  refresh();
+  const what = scope === "round" ? `Runde ${affected[0].matchday}` : "Kampen";
+  return {
+    ok: target === "" ? `${what} følger nu runden igen.` : `${what} opkræves nu i ${target}.`,
   };
 }

@@ -12,6 +12,7 @@ import {
   runSyncAction,
   saveFineTypeAction,
   setAssignmentsAction,
+  setBillingMonthAction,
   updateSeasonAction,
   type ActionState,
 } from "@/app/admin/actions";
@@ -392,5 +393,52 @@ export function SyncButtons() {
       <Message state={syncState} />
       <Message state={recalcState} />
     </div>
+  );
+}
+
+/**
+ * Flytter en kamp eller en hel runde til en anden opkrævningsmåned.
+ * Vises kun de måneder rundens kampe faktisk ligger i — det er altid der,
+ * valget står, når en weekend krydser et månedsskifte.
+ */
+export function BillingMonthForm({
+  scope,
+  matchId,
+  matchday,
+  current,
+  options,
+  overridden,
+  label,
+}: {
+  scope: "match" | "round";
+  matchId?: number;
+  matchday?: number | null;
+  current: string;
+  options: { value: string; label: string }[];
+  overridden: boolean;
+  label: string;
+}) {
+  const [state, action, pending] = useActionState(setBillingMonthAction, initial);
+
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="scope" value={scope} />
+      {matchId !== undefined ? <input type="hidden" name="matchId" value={matchId} /> : null}
+      {matchday !== undefined && matchday !== null ? (
+        <input type="hidden" name="matchday" value={matchday} />
+      ) : null}
+      <select name="month" defaultValue={overridden ? current : ""} className={inputClass}>
+        <option value="">Følg runden</option>
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <Button type="submit" disabled={pending}>
+        {label}
+      </Button>
+      <Message state={state} />
+    </form>
   );
 }

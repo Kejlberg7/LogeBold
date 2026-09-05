@@ -12,10 +12,14 @@ import {
   syncRuns,
   teams,
 } from "@/db/schema";
-import { TZ } from "./dates";
+import { TZ, currentMonthKey } from "./dates";
 
-/** Måneden en postering hører til, beregnet i dansk tid inde i databasen. */
-const monthKeySql = sql<string>`to_char(${ledgerEntries.occurredAt} at time zone ${sql.raw(`'${TZ}'`)}, 'YYYY-MM')`;
+/**
+ * Måneden en postering opkræves i. Normalt sat eksplicit ved oprettelsen — for
+ * kampe efter runden, ikke efter kickoff — ellers falder vi tilbage til datoen
+ * beregnet i dansk tid, sådan som posteringer fra før feltet fandtes læses.
+ */
+const monthKeySql = sql<string>`coalesce(${ledgerEntries.billingMonth}, to_char(${ledgerEntries.occurredAt} at time zone ${sql.raw(`'${TZ}'`)}, 'YYYY-MM'))`;
 
 export type TeamRef = {
   id: number;
@@ -222,6 +226,7 @@ export type LedgerRow = {
   note: string | null;
   paymentMethod: string | null;
   teamShortName: string | null;
+  billingMonth: string | null;
   matchId: number | null;
   teamId: number | null;
   matchday: number | null;
@@ -242,6 +247,7 @@ export async function getMemberEntries(
       note: ledgerEntries.note,
       paymentMethod: ledgerEntries.paymentMethod,
       teamShortName: teams.shortName,
+      billingMonth: ledgerEntries.billingMonth,
       matchId: ledgerEntries.matchId,
       teamId: ledgerEntries.teamId,
       matchday: matches.matchday,
@@ -474,6 +480,7 @@ export type MemberMatchRow = {
   matchday: number | null;
   kickoff: Date;
   outcome: "win" | "draw" | "loss";
+  billingMonth: string;
   amountOre: number;
   scoreline: string;
   teamShortName: string;
@@ -499,13 +506,18 @@ export async function getMemberMatches(
     away_short: string;
     is_home: boolean;
     amount_ore: number;
+    billing_month: string;
   }>(sql`
     select
       m.id as match_id, m.matchday, m.kickoff, m.home_goals, m.away_goals,
       t.id as team_id, t.short_name as team_short,
       h.short_name as home_short, a.short_name as away_short,
       (m.home_team_id = t.id) as is_home,
-      coalesce(le.amount_ore, 0) as amount_ore
+      coalesce(le.amount_ore, 0) as amount_ore,
+      coalesce(
+        m.billing_month_override, m.billing_month_default,
+        to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM')
+      ) as billing_month
     from assignments asg
     join teams t on t.id = asg.team_id
     join matches m
@@ -534,12 +546,164 @@ export async function getMemberMatches(
       teamId: r.team_id,
       matchday: r.matchday,
       kickoff: new Date(r.kickoff),
+      billingMonth: r.billing_month,
       outcome: own > other ? ("win" as const) : own === other ? ("draw" as const) : ("loss" as const),
       amountOre: r.amount_ore,
       scoreline: `${r.home_short} ${r.home_goals}-${r.away_goals} ${r.away_short}`,
       teamShortName: r.team_short,
     };
   });
+}
+
+export type MemberPeriodStatus = {
+  memberId: number;
+  name: string;
+  /** Opkrævet i måneden — kampe, bøder og reguleringer. */
+  chargedOre: number;
+  /** Hvor meget af månedens opkrævning der er dækket af indbetalinger. */
+  coveredOre: number;
+  outstandingOre: number;
+  status: "betalt" | "delvist" | "mangler" | "intet";
+};
+
+export type PeriodOverview = {
+  monthKey: string;
+  months: string[];
+  rows: MemberPeriodStatus[];
+  chargedOre: number;
+  coveredOre: number;
+  outstandingOre: number;
+};
+
+/**
+ * Opgørelse for én måned: hvem har betalt, og hvem mangler.
+ *
+ * Indbetalinger er ikke mærket med hvilken måned de dækker, så de fordeles
+ * ældste måned først. Betaler nogen for lidt i oktober, æder november-beløbet
+ * altså ikke hullet fra oktober — hullet bliver stående, hvor det opstod.
+ */
+export async function getPeriodOverview(
+  seasonId: number,
+  wantedMonth?: string,
+): Promise<PeriodOverview | null> {
+  const [memberRows, totals] = await Promise.all([
+    db
+      .select({ id: members.id, name: members.name })
+      .from(members)
+      .where(eq(members.isActive, true))
+      .orderBy(asc(members.name)),
+    getMonthlyMemberTotals(seasonId),
+  ]);
+
+  const months = [...totals.keys()].sort();
+  if (months.length === 0) return null;
+
+  const monthKey = wantedMonth && months.includes(wantedMonth) ? wantedMonth : lastClosedMonth(months);
+
+  const rows: MemberPeriodStatus[] = memberRows.map((member) => {
+    // Fordel medlemmets samlede indbetalinger ud over månederne, ældste først.
+    let pool = 0;
+    for (const key of months) pool += totals.get(key)?.get(member.id)?.paidOre ?? 0;
+
+    let chargedOre = 0;
+    let coveredOre = 0;
+    for (const key of months) {
+      const charged = Math.max(0, totals.get(key)?.get(member.id)?.chargedOre ?? 0);
+      const covered = Math.min(pool, charged);
+      pool -= covered;
+      if (key === monthKey) {
+        chargedOre = charged;
+        coveredOre = covered;
+        break;
+      }
+    }
+
+    const outstandingOre = chargedOre - coveredOre;
+    return {
+      memberId: member.id,
+      name: member.name,
+      chargedOre,
+      coveredOre,
+      outstandingOre,
+      status:
+        chargedOre === 0
+          ? ("intet" as const)
+          : outstandingOre <= 0
+            ? ("betalt" as const)
+            : coveredOre > 0
+              ? ("delvist" as const)
+              : ("mangler" as const),
+    };
+  });
+
+  return {
+    monthKey,
+    months,
+    rows,
+    chargedOre: rows.reduce((sum, r) => sum + r.chargedOre, 0),
+    coveredOre: rows.reduce((sum, r) => sum + r.coveredOre, 0),
+    outstandingOre: rows.reduce((sum, r) => sum + r.outstandingOre, 0),
+  };
+}
+
+/** Den nyeste måned der ikke er indeværende — det er den, man er ved at kræve ind. */
+function lastClosedMonth(months: string[]): string {
+  const now = currentMonthKey();
+  const closed = months.filter((m) => m < now);
+  return closed.length > 0 ? closed[closed.length - 1] : months[months.length - 1];
+}
+
+export type MatchBillingRow = {
+  id: number;
+  matchday: number | null;
+  kickoff: Date;
+  /** Måneden kampen faktisk spilles i. */
+  kickoffMonth: string;
+  /** Måneden kampen opkræves i — runden som standard, ellers admins valg. */
+  billingMonth: string;
+  overridden: boolean;
+  home: string;
+  away: string;
+};
+
+/** Alle kampe med den måned de opkræves i — grundlaget for admins runde-side. */
+export async function getMatchBilling(seasonId: number): Promise<MatchBillingRow[]> {
+  const rows = await db.execute<{
+    id: number;
+    matchday: number | null;
+    kickoff: Date;
+    kickoff_month: string;
+    billing_month: string;
+    override: string | null;
+    home: string;
+    away: string;
+  }>(sql`
+    select
+      m.id, m.matchday, m.kickoff,
+      to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM') as kickoff_month,
+      coalesce(
+        m.billing_month_override, m.billing_month_default,
+        to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM')
+      ) as billing_month,
+      m.billing_month_override as override,
+      h.short_name as home, a.short_name as away
+    from matches m
+    join teams h on h.id = m.home_team_id
+    join teams a on a.id = m.away_team_id
+    where m.season_id = ${seasonId}
+    order by m.matchday asc, m.kickoff asc
+  `);
+
+  return rows.map((r) => ({
+    id: r.id,
+    matchday: r.matchday,
+    kickoff: new Date(r.kickoff),
+    kickoffMonth: r.kickoff_month,
+    billingMonth: r.billing_month,
+    overridden: r.override !== null,
+    home: r.home,
+    away: r.away,
+  }));
 }
 
 /* --------------------------------------------------------------- admin-opslag */
