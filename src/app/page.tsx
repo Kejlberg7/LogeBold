@@ -6,7 +6,7 @@ import {
   getPotSummary,
   getStandings,
 } from "@/lib/queries";
-import { monthLabel } from "@/lib/dates";
+import { formatDateRange, monthKey, monthLabel } from "@/lib/dates";
 import { formatOre } from "@/lib/money";
 import { Badge, Card, CardHeader, Empty, PageTitle, Stat } from "@/components/ui";
 import { OutstandingTable } from "@/components/outstanding-table";
@@ -45,6 +45,14 @@ export default async function OverviewPage({
     period && monthIndex >= 0 && monthIndex < period.months.length - 1
       ? period.months[monthIndex + 1]
       : null;
+  // Kampe fra en anden kalendermåned end den vi står på — det er dem der ville
+  // undre folk, hvis datoerne ikke stod der.
+  const spillMonths = period?.span
+    ? [...new Set([monthKey(period.span.from), monthKey(period.span.to)])].filter(
+        (m) => m !== period.monthKey,
+      )
+    : [];
+
   const owing = standings
     .filter((s) => s.balanceOre > 0)
     .sort((a, b) => b.balanceOre - a.balanceOre)
@@ -103,6 +111,18 @@ export default async function OverviewPage({
               </span>
             }
           />
+          {period.span ? (
+            <div className="border-b border-rule-soft px-4 py-2.5 text-[13px] text-ink-soft">
+              Dækker {period.span.matchCount} kampe ·{" "}
+              {formatDateRange(period.span.from, period.span.to)}
+              {spillMonths.length > 0 ? (
+                <div className="mt-0.5">
+                  En runde hen over et månedsskifte opkræves samlet, så kampe i{" "}
+                  {spillMonths.map(monthLabel).join(" og ")} tælles med her.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <PeriodTable
             rows={period.rows}
             heading={`Logen ${season.name} — ${monthLabel(period.monthKey)}`}

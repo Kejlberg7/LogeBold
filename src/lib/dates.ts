@@ -54,6 +54,17 @@ export function formatDate(date: Date): string {
   return `${p.day}. ${MONTHS_DA_SHORT[p.month - 1]}`;
 }
 
+/** "15. aug.", "15.–30. aug." eller "31. aug. – 2. sep." */
+export function formatDateRange(from: Date, to: Date): string {
+  const a = parts(from);
+  const b = parts(to);
+  if (a.year === b.year && a.month === b.month) {
+    if (a.day === b.day) return formatDate(from);
+    return `${a.day}.–${b.day}. ${MONTHS_DA_SHORT[b.month - 1]}`;
+  }
+  return `${formatDate(from)} – ${formatDate(to)}`;
+}
+
 /** "13. sep. 2026" */
 export function formatDateLong(date: Date): string {
   const p = parts(date);

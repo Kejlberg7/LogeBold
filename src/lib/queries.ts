@@ -566,6 +566,9 @@ export type MemberPeriodStatus = {
   status: "betalt" | "delvist" | "mangler" | "intet";
 };
 
+/** Første og sidste kamp der opkræves i en måned. */
+export type MonthSpan = { from: Date; to: Date; matchCount: number };
+
 export type PeriodOverview = {
   monthKey: string;
   months: string[];
@@ -573,7 +576,51 @@ export type PeriodOverview = {
   chargedOre: number;
   coveredOre: number;
   outstandingOre: number;
+  /** Hvilke datoer måneden dækker. Tom hvis der ikke er spillet kampe endnu. */
+  span: MonthSpan | null;
 };
+
+/**
+ * Datoerne hver opkrævningsmåned rent faktisk dækker.
+ *
+ * En runde opkræves samlet, så en weekend hen over et månedsskifte lander i
+ * den måned runden hører til. Uden datoerne kan man ikke se det på forsiden.
+ * Kun spillede kampe tælles med — det er dem der er blevet til penge.
+ */
+async function getMonthSpans(seasonId: number): Promise<Map<string, MonthSpan>> {
+  const rows = await db.execute<{
+    billing_month: string;
+    first_kickoff: Date;
+    last_kickoff: Date;
+    match_count: number;
+  }>(sql`
+    select
+      coalesce(
+        m.billing_month_override, m.billing_month_default,
+        to_char(m.kickoff at time zone 'Europe/Copenhagen', 'YYYY-MM')
+      ) as billing_month,
+      min(m.kickoff) as first_kickoff,
+      max(m.kickoff) as last_kickoff,
+      count(*)::int as match_count
+    from matches m
+    where m.season_id = ${seasonId}
+      and m.status in ('FINISHED', 'AWARDED')
+      and m.home_goals is not null
+      and m.away_goals is not null
+    group by 1
+  `);
+
+  return new Map(
+    rows.map((r) => [
+      r.billing_month,
+      {
+        from: new Date(r.first_kickoff),
+        to: new Date(r.last_kickoff),
+        matchCount: r.match_count,
+      },
+    ]),
+  );
+}
 
 type Allocation = {
   months: string[];
@@ -623,7 +670,10 @@ export async function getPeriodOverview(
   seasonId: number,
   wantedMonth?: string,
 ): Promise<PeriodOverview | null> {
-  const { months, members: memberRows, perMonth } = await allocatePayments(seasonId);
+  const [{ months, members: memberRows, perMonth }, spans] = await Promise.all([
+    allocatePayments(seasonId),
+    getMonthSpans(seasonId),
+  ]);
   if (months.length === 0) return null;
 
   const monthKey =
@@ -657,6 +707,7 @@ export async function getPeriodOverview(
     chargedOre: rows.reduce((sum, r) => sum + r.chargedOre, 0),
     coveredOre: rows.reduce((sum, r) => sum + r.coveredOre, 0),
     outstandingOre: rows.reduce((sum, r) => sum + r.outstandingOre, 0),
+    span: spans.get(monthKey) ?? null,
   };
 }
 
