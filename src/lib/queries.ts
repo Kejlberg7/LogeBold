@@ -783,7 +783,9 @@ export async function getPeriodOverview(
   if (months.length === 0) return null;
 
   const monthKey =
-    wantedMonth && months.includes(wantedMonth) ? wantedMonth : lastClosedMonth(months);
+    wantedMonth && months.includes(wantedMonth)
+      ? wantedMonth
+      : (oldestUnpaidMonth(months, perMonth) ?? lastClosedMonth(months));
   const month = perMonth.get(monthKey)!;
 
   const rows: MemberPeriodStatus[] = memberRows.map((member) => {
@@ -855,6 +857,19 @@ export async function getLockSuggestions(seasonId: number): Promise<LockSuggesti
   }
 
   return out;
+}
+
+/**
+ * Den ældste måned hvor nogen stadig mangler at betale. Er en måned gjort op,
+ * er der ingen grund til at vise den — så springer vi videre til den næste.
+ */
+function oldestUnpaidMonth(months: string[], perMonth: Allocation["perMonth"]): string | null {
+  for (const monthKey of months) {
+    for (const { chargedOre, coveredOre } of perMonth.get(monthKey)!.values()) {
+      if (chargedOre - coveredOre > 0) return monthKey;
+    }
+  }
+  return null;
 }
 
 /** Den nyeste måned der ikke er indeværende — det er den, man er ved at kræve ind. */
