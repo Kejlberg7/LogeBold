@@ -26,6 +26,11 @@ Next.js 16 (App Router) + Drizzle + Postgres. Dansk brugerflade.
   (kamp, hold, medlem) — ikke (kamp, hold).
 - Manuelle posteringer slettes ikke; de modposteres via `reversesEntryId`.
 
+## Arbejdsgang
+
+- Når en ændring er pushet, så lav selv en PR mod `main` og merge den, når
+  checks er grønne. Du behøver ikke spørge først.
+
 ## Struktur
 
 | Sti | Indhold |
