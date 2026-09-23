@@ -30,6 +30,9 @@ export const viewport: Viewport = {
   ],
 };
 
+// Vercel sætter commit-sha'en på hvert deploy — så kan man se hvilken version der kører.
+const commitSha = process.env.VERCEL_GIT_COMMIT_SHA;
+
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
@@ -41,6 +44,18 @@ export default async function RootLayout({
         <Nav isAdmin={session?.isAdmin ?? false} memberName={session?.name} />
         <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-6 sm:pb-16 sm:pt-8">
           {children}
+          <footer className="mt-10 text-center text-[12px] text-ink-faint">
+            {commitSha ? (
+              <a
+                href={`https://github.com/Kejlberg7/LogeBold/commit/${commitSha}`}
+                className="hover:text-ink-soft"
+              >
+                Version {commitSha.slice(0, 7)}
+              </a>
+            ) : (
+              "Version lokal"
+            )}
+          </footer>
         </main>
       </body>
     </html>
