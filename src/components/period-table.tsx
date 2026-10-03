@@ -13,6 +13,27 @@ const STATUS_LABELS: Record<MemberPeriodStatus["status"], string> = {
   intet: "Intet opkrævet",
 };
 
+type SortKey = "name" | "chargedOre" | "coveredOre" | "outstandingOre" | "status";
+type SortDirection = "asc" | "desc";
+
+const SORTABLE_COLUMNS: {
+  key: SortKey;
+  label: string;
+  align: "left" | "right";
+}[] = [
+  { key: "name", label: "Medlem", align: "left" },
+  { key: "chargedOre", label: "Opkrævet", align: "right" },
+  { key: "coveredOre", label: "Betalt", align: "right" },
+  { key: "outstandingOre", label: "Mangler", align: "right" },
+  { key: "status", label: "Status", align: "right" },
+];
+
+function compareRows(a: MemberPeriodStatus, b: MemberPeriodStatus, key: SortKey): number {
+  if (key === "name") return a.name.localeCompare(b.name, "da");
+  if (key === "status") return STATUS_LABELS[a.status].localeCompare(STATUS_LABELS[b.status], "da");
+  return a[key] - b[key];
+}
+
 /** Beskeden til logegruppen: kun dem der mangler, navn og beløb. */
 function buildText(rows: MemberPeriodStatus[], heading: string): string {
   const missing = rows.filter((r) => r.outstandingOre > 0);
@@ -33,6 +54,7 @@ export function PeriodTable({
   heading: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
 
   // Medlemmer uden opkrævning i måneden fylder kun i tabellen.
   const shown = rows.filter((r) => r.chargedOre > 0);
@@ -59,7 +81,19 @@ export function PeriodTable({
   }
 
   // Dem der mangler står øverst — det er dem beskeden handler om.
-  const ordered = [...missing, ...paid];
+  const ordered = sort
+    ? [...shown].sort((a, b) => {
+        const compared = compareRows(a, b, sort.key);
+        return (sort.direction === "asc" ? compared : -compared) || a.name.localeCompare(b.name, "da");
+      })
+    : [...missing, ...paid];
+
+  function toggleSort(key: SortKey) {
+    setSort((current) => ({
+      key,
+      direction: current?.key === key && current.direction === "asc" ? "desc" : "asc",
+    }));
+  }
 
   return (
     <>
@@ -67,15 +101,24 @@ export function PeriodTable({
         <table className="w-full text-[14px]">
           <thead>
             <tr className="border-b border-rule">
-              <th className="label px-4 py-2 text-left font-normal">Medlem</th>
-              <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
-                Opkrævet
-              </th>
-              <th className="label hidden px-2 py-2 text-right font-normal sm:table-cell">
-                Betalt
-              </th>
-              <th className="label px-2 py-2 text-right font-normal">Mangler</th>
-              <th className="label px-4 py-2 text-right font-normal">Status</th>
+              {SORTABLE_COLUMNS.map(({ key, label, align }) => (
+                <th
+                  key={key}
+                  aria-sort={sort?.key === key ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}
+                  className={`label ${key === "name" ? "px-4" : "px-2"} py-2 font-normal ${align === "left" ? "text-left" : "text-right"}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(key)}
+                    className="inline-flex items-center gap-1 hover:text-ink focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                  >
+                    {label}
+                    <span aria-hidden="true" className="w-3 text-center">
+                      {sort?.key === key ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}
+                    </span>
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -92,10 +135,10 @@ export function PeriodTable({
                     {row.name}
                   </Link>
                 </td>
-                <td className="num hidden whitespace-nowrap px-2 py-2.5 text-right text-ink-soft sm:table-cell">
+                <td className="num whitespace-nowrap px-2 py-2.5 text-right text-ink-soft">
                   {formatOreBare(row.chargedOre)}
                 </td>
-                <td className="num hidden whitespace-nowrap px-2 py-2.5 text-right text-ink-soft sm:table-cell">
+                <td className="num whitespace-nowrap px-2 py-2.5 text-right text-ink-soft">
                   {row.coveredOre === 0 ? "–" : formatOreBare(row.coveredOre)}
                 </td>
                 <td className="whitespace-nowrap px-2 py-2.5 text-right">
@@ -108,8 +151,8 @@ export function PeriodTable({
             ))}
             <tr className="border-t-2 border-ink">
               <td className="px-4 py-2.5 text-[15px] font-semibold">I alt</td>
-              <td className="hidden sm:table-cell" />
-              <td className="hidden sm:table-cell" />
+              <td />
+              <td />
               <td className="whitespace-nowrap px-2 py-2.5 text-right">
                 <Money ore={totalOutstanding} className="text-[15px] font-semibold" />
               </td>
