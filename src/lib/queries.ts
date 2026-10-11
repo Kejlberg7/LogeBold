@@ -13,6 +13,7 @@ import {
   teams,
 } from "@/db/schema";
 import { TZ, currentMonthKey } from "./dates";
+import { buildStatsTimeline, type StatsHistory } from "./stats";
 
 /**
  * Måneden en postering opkræves i. Normalt sat eksplicit ved oprettelsen — for
@@ -1081,4 +1082,44 @@ export async function getMonthlyMemberTotals(
     byMonth.set(row.monthKey, month);
   }
   return byMonth;
+}
+
+/** Daily history follows actual event dates, not the billing month. */
+export async function getStatsHistory(seasonId: number): Promise<StatsHistory> {
+  const entryDay = sql<string>`to_char(${ledgerEntries.occurredAt} at time zone 'Europe/Copenhagen', 'YYYY-MM-DD')`;
+  const payoutDay = sql<string>`to_char(${payouts.occurredAt} at time zone 'Europe/Copenhagen', 'YYYY-MM-DD')`;
+  const [entries, payoutRows, memberRows, teamRows, teamsByMember] = await Promise.all([
+    db.select({
+      day: entryDay,
+      memberId: ledgerEntries.memberId,
+      teamId: ledgerEntries.teamId,
+      type: ledgerEntries.type,
+      amountOre: sql<number>`sum(${ledgerEntries.amountOre})::int`,
+    }).from(ledgerEntries)
+      .where(eq(ledgerEntries.seasonId, seasonId))
+      .groupBy(entryDay, ledgerEntries.memberId, ledgerEntries.teamId, ledgerEntries.type),
+    db.select({ day: payoutDay, amountOre: sql<number>`sum(${payouts.amountOre})::int` })
+      .from(payouts).where(eq(payouts.seasonId, seasonId)).groupBy(payoutDay),
+    db.select({ id: members.id, name: members.name, isActive: members.isActive })
+      .from(members).orderBy(asc(members.name)),
+    db.select({ id: teams.id, name: teams.shortName }).from(teams).orderBy(asc(teams.shortName)),
+    getTeamsByMember(seasonId),
+  ]);
+
+  const memberIds = new Set(entries.map((entry) => entry.memberId));
+  const teamIds = new Set(entries.filter((entry) => entry.type === "match").map((entry) => entry.teamId));
+  const owners = new Map<number, string[]>();
+  for (const member of memberRows) {
+    for (const team of teamsByMember.get(member.id) ?? []) {
+      teamIds.add(team.id);
+      owners.set(team.id, [...(owners.get(team.id) ?? []), member.name]);
+    }
+  }
+  return {
+    points: buildStatsTimeline(entries, payoutRows),
+    members: memberRows
+      .filter((member) => member.isActive || memberIds.has(member.id) || teamsByMember.has(member.id))
+      .map((member) => ({ id: member.id, name: member.name, teams: (teamsByMember.get(member.id) ?? []).map((team) => team.shortName) })),
+    teams: teamRows.filter((team) => teamIds.has(team.id)).map((team) => ({ ...team, owners: owners.get(team.id) ?? [] })),
+  };
 }
