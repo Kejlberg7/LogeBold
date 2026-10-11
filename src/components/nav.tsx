@@ -8,6 +8,7 @@ const ITEMS = [
   { href: "/", label: "Oversigt" },
   { href: "/kampe", label: "Kampe" },
   { href: "/tabel", label: "Stilling" },
+  { href: "/stats", label: "Stats" },
 ];
 
 export function Nav({ isAdmin, memberName }: { isAdmin: boolean; memberName?: string }) {
